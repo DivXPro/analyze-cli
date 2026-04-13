@@ -10,6 +10,10 @@
 - 已完成计划：`exec-plans/completed/`
 - 技术债：`exec-plans/tech-debt-tracker.md`
 
+## 当前活动计划
+
+- `exec-plans/active/2026-04-14-xhs-ai-pipeline-agent-test-plan.md` — 小红书 AI 热帖 Agent 自动执行测试计划（opencli 抓取 + 导入 + 分析）
+
 ## 当前已归档内容
 
 - `exec-plans/completed/2026-04-13-social-media-analysis-implementation.md`
