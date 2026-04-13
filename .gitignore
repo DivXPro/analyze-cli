@@ -1,5 +1,8 @@
 node_modules/
 dist/
+downloads/
+test-data/
+
 *.duckdb
 *.log
 .env
