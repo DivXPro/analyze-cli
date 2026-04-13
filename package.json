@@ -1,5 +1,30 @@
 {
   "name": "analyze-cli",
   "version": "0.1.0",
-  "main": "index.js"
+  "description": "AI-powered social media content analysis CLI tool",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "analyze-cli": "./bin/analyze-cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
+    "bree": "^9.2.9",
+    "commander": "^14.0.3",
+    "duckdb": "^1.4.4",
+    "picocolors": "^1.1.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
 }
