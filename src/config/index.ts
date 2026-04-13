@@ -1,0 +1,121 @@
+import * as fs from 'fs';
+import { Config } from '../shared/types';
+import { expandPath } from '../shared/utils';
+import { loadClaudeConfig } from './claude-config';
+
+const DEFAULT_CONFIG: Config = {
+  database: {
+    path: expandPath('~/.analyze-cli/data.duckdb'),
+  },
+  anthropic: {
+    api_key: '',
+    model: 'claude-opus-4-5-20250514',
+    max_tokens: 4096,
+    temperature: 0.3,
+  },
+  worker: {
+    concurrency: 2,
+    max_retries: 3,
+    retry_delay_ms: 2000,
+  },
+  paths: {
+    media_dir: expandPath('~/.analyze-cli/media'),
+    export_dir: expandPath('~/.analyze-cli/exports'),
+  },
+  logging: {
+    level: 'info',
+  },
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function deepMerge(base: any, override: any): any {
+  if (override === null || override === undefined) return base;
+  if (typeof override !== 'object' || Array.isArray(override)) return override;
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    const baseVal = base?.[key];
+    const overVal = override[key];
+    if (
+      typeof baseVal === 'object' && baseVal !== null &&
+      typeof overVal === 'object' && overVal !== null &&
+      !Array.isArray(baseVal) && !Array.isArray(overVal)
+    ) {
+      result[key] = deepMerge(baseVal, overVal);
+    } else if (overVal !== undefined) {
+      result[key] = overVal;
+    }
+  }
+  return result;
+}
+
+function resolveEnvVariables(obj: unknown): unknown {
+  if (typeof obj === 'string') {
+    const match = obj.match(/^\$\{(\w+)\}$/);
+    if (match) {
+      return process.env[match[1]] ?? '';
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) return obj.map(resolveEnvVariables);
+  if (typeof obj === 'object' && obj !== null) {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      result[k] = resolveEnvVariables(v);
+    }
+    return result;
+  }
+  return obj;
+}
+
+export function loadConfig(): Config {
+  const configPath = expandPath('~/.analyze-cli/config.json');
+  let fileConfig: Partial<Config> = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      fileConfig = JSON.parse(content) as Partial<Config>;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Environment variable overrides
+  const envConfig: Partial<Config> = {
+    anthropic: {
+      api_key: process.env.ANTHROPIC_API_KEY ?? '',
+      model: process.env.ANTHROPIC_MODEL ?? '',
+      max_tokens: parseInt(process.env.ANTHROPIC_MAX_TOKENS ?? '4096', 10),
+      temperature: parseFloat(process.env.ANTHROPIC_TEMPERATURE ?? '0.3'),
+    },
+    database: {
+      path: process.env.ANALYZE_CLI_DB_PATH ?? '',
+    },
+    worker: {
+      concurrency: parseInt(process.env.ANALYZE_CLI_WORKERS ?? '2', 10),
+      max_retries: 3,
+      retry_delay_ms: 2000,
+    },
+    logging: {
+      level: (process.env.ANALYZE_CLI_LOG_LEVEL as Config['logging']['level']) ?? 'info',
+    },
+  };
+
+  // Claude Code config fallback
+  const claudeConfig = loadClaudeConfig();
+  if (!envConfig.anthropic?.api_key && !fileConfig.anthropic?.api_key) {
+    if (claudeConfig.api_key) {
+      if (!envConfig.anthropic) envConfig.anthropic = { ...DEFAULT_CONFIG.anthropic };
+      envConfig.anthropic.api_key = claudeConfig.api_key;
+    }
+    if (claudeConfig.base_url) {
+      if (!envConfig.anthropic) envConfig.anthropic = { ...DEFAULT_CONFIG.anthropic };
+      (envConfig.anthropic as Record<string, unknown>).base_url = claudeConfig.base_url;
+    }
+  }
+
+  const resolved = deepMerge(DEFAULT_CONFIG, fileConfig);
+  const withEnv = deepMerge(resolved, envConfig);
+  return resolveEnvVariables(withEnv) as Config;
+}
+
+export const config = loadConfig();
