@@ -2,6 +2,10 @@ import { Command } from 'commander';
 import * as pc from 'picocolors';
 import * as fs from 'fs';
 import { listResultsByTask, aggregateStats, getResultById } from '../db/analysis-results';
+import { listMediaFilesByPost } from '../db/media-files';
+import { getPostById } from '../db/posts';
+import { listTaskTargets } from '../db/task-targets';
+import { query } from '../db/client';
 import { runMigrations } from '../db/migrate';
 import { seedAll } from '../db/seed';
 
@@ -30,14 +34,25 @@ export function resultCommands(program: Command): void {
       }
       console.log(pc.bold(`\nAnalysis Results (${results.length}):`));
       console.log(pc.dim('─'.repeat(80)));
+      const isMedia = opts.target === 'media';
       for (const r of results) {
         const rec = r as Record<string, unknown>;
         const id = String(rec.id ?? '').slice(0, 8);
-        const sentiment = rec.sentiment_label ? pc.cyan(String(rec.sentiment_label)) : pc.gray('N/A');
-        const summary = rec.summary ? String(rec.summary).slice(0, 80) : '';
-        console.log(`  ${pc.green(id)} Sentiment: ${sentiment} ${summary}`);
-        if (rec.intent) console.log(`    Intent: ${pc.yellow(String(rec.intent))}`);
-        if (rec.risk_flagged) console.log(`    ${pc.red('⚠ Risk:')} ${rec.risk_level} - ${rec.risk_reason ?? ''}`);
+        if (isMedia) {
+          const mediaType = rec.media_type ? pc.cyan(String(rec.media_type)) : pc.gray('N/A');
+          const contentType = rec.content_type ? pc.yellow(String(rec.content_type)) : '';
+          const desc = rec.description ? String(rec.description).slice(0, 60) : '';
+          const risk = rec.risk_flagged ? pc.red(` ⚠${rec.risk_level}`) : '';
+          console.log(`  ${pc.green(id)} Type: ${mediaType} ${contentType}${risk}`);
+          if (desc) console.log(`    ${pc.gray(desc)}`);
+          if (rec.ocr_text) console.log(`    OCR: ${pc.gray(String(rec.ocr_text).slice(0, 60))}`);
+        } else {
+          const sentiment = rec.sentiment_label ? pc.cyan(String(rec.sentiment_label)) : pc.gray('N/A');
+          const summary = rec.summary ? String(rec.summary).slice(0, 80) : '';
+          console.log(`  ${pc.green(id)} Sentiment: ${sentiment} ${summary}`);
+          if (rec.intent) console.log(`    Intent: ${pc.yellow(String(rec.intent))}`);
+          if (rec.risk_flagged) console.log(`    ${pc.red('⚠ Risk:')} ${rec.risk_level} - ${rec.risk_reason ?? ''}`);
+        }
       }
       console.log(pc.dim('─'.repeat(80)));
       console.log(`Showing ${results.length}\n`);
@@ -164,4 +179,82 @@ function exportToCsv(rows: Record<string, unknown>[]): string {
     lines.push(values.join(','));
   }
   return lines.join('\n') + '\n';
+}
+
+/**
+ * `result media` — Show media files and analysis results for a task's posts
+ * Note: This must be called AFTER resultCommands() to reuse the existing 'result' command.
+ */
+export function resultMediaCommands(program: Command): void {
+  // Get existing 'result' command or create new one
+  const result = program.commands.find(c => c.name() === 'result') ?? program.command('result');
+
+  result
+    .command('media')
+    .description('Show media files and analysis results for a task')
+    .requiredOption('--task-id <id>', 'Task ID')
+    .option('--post-id <id>', 'Filter by specific post ID')
+    .action(async (opts: { taskId: string; postId?: string }) => {
+      await runMigrations();
+      await seedAll();
+
+      const postIds = opts.postId
+        ? [opts.postId]
+        : (await listTaskTargets(opts.taskId))
+            .filter(t => t.target_type === 'post')
+            .map(t => t.target_id);
+
+      if (postIds.length === 0) {
+        console.log(pc.yellow('No posts bound to this task. Use task add-posts first.'));
+        return;
+      }
+
+      console.log(pc.bold(`\nMedia Files for task ${opts.taskId}:`));
+      console.log(pc.dim('─'.repeat(80)));
+
+      let totalMedia = 0;
+      let totalAnalyzed = 0;
+
+      for (const postId of postIds) {
+        const post = await getPostById(postId);
+        if (!post) continue;
+
+        const mediaFiles = await listMediaFilesByPost(postId);
+        if (mediaFiles.length === 0) continue;
+
+        const postTitle = post.title ?? post.content.slice(0, 40);
+        console.log(pc.bold(`\n  📝 ${postTitle} (${postId.slice(0, 8)}...)`));
+
+        for (const m of mediaFiles) {
+          totalMedia++;
+          const mediaIcon = m.media_type === 'image' ? '🖼️' : m.media_type === 'video' ? '🎬' : '🎵';
+          const pathInfo = m.local_path ? m.local_path : m.url;
+          console.log(`    ${mediaIcon} ${pc.cyan(m.id.slice(0, 8))} ${pc.dim(pathInfo)}`);
+
+          // Look up analysis result for this media
+          const analysisRows = await query(
+            'SELECT * FROM analysis_results_media WHERE task_id = ? AND media_id = ?',
+            [opts.taskId, m.id],
+          );
+
+          if (analysisRows.length > 0) {
+            totalAnalyzed++;
+            const a = analysisRows[0] as Record<string, unknown>;
+            const sentiment = a.sentiment_label ? pc.cyan(String(a.sentiment_label)) : pc.gray('N/A');
+            const contentType = a.content_type ? pc.yellow(String(a.content_type)) : '';
+            const desc = a.description ? String(a.description).slice(0, 80) : '';
+            const risk = a.risk_flagged ? pc.red(` ⚠${a.risk_level}`) : '';
+            console.log(`      Analysis: ${sentiment} ${contentType}${risk}`);
+            if (desc) console.log(`      ${pc.gray(desc)}`);
+            if (a.ocr_text) console.log(`      OCR: ${pc.gray(String(a.ocr_text).slice(0, 80))}`);
+          } else {
+            console.log(`      ${pc.gray('Not analyzed')}`);
+          }
+        }
+      }
+
+      console.log(pc.dim('\n' + '─'.repeat(80)));
+      console.log(`  Total: ${totalMedia} media files, ${totalAnalyzed} analyzed, ${totalMedia - totalAnalyzed} pending`);
+      console.log();
+    });
 }

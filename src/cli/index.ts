@@ -7,7 +7,7 @@ import { commentCommands } from './comment';
 import { taskCommands } from './task';
 import { taskPrepareCommands } from './task-prepare';
 import { templateCommands } from './template';
-import { resultCommands } from './result';
+import { resultCommands, resultMediaCommands } from './result';
 
 const program = new Command();
 
@@ -39,6 +39,7 @@ templateCommands(program);
 
 // Result commands
 resultCommands(program);
+resultMediaCommands(program);
 
 program.parse(process.argv);
 
