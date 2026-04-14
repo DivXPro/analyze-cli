@@ -39,7 +39,7 @@ export function taskCommands(program: Command): void {
         name: opts.name,
         description: opts.description ?? null,
         template_id: templateId,
-        cli_templates: null,
+        cli_templates: opts.cliTemplates ?? null,
         status: 'pending',
         stats: { total: 0, done: 0, failed: 0 },
         created_at: now(),
@@ -118,17 +118,8 @@ export function taskCommands(program: Command): void {
         )).map(r => r.comment_id),
       );
 
-      const analyzedMediaIds = new Set(
-        (await query<{ media_id: string }>(
-          'SELECT DISTINCT media_id FROM analysis_results_media WHERE task_id = ?',
-          [opts.taskId],
-        )).map(r => r.media_id),
-      );
-
       const targetsToProcess = stats.pending.filter(t => {
         if (t.target_type === 'comment' && analyzedCommentIds.has(t.target_id)) return false;
-        if (t.target_type === 'post' && analyzedCommentIds.has(t.target_id)) return false;
-        if (t.target_type === 'comment' && analyzedMediaIds.has(t.target_id)) return false;
         return true;
       });
 
