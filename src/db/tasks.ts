@@ -4,9 +4,9 @@ import { now } from '../shared/utils';
 
 export async function createTask(task: Task): Promise<void> {
   await run(
-    `INSERT INTO tasks (id, name, description, template_id, status, stats, created_at, updated_at, completed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [task.id, task.name, task.description, task.template_id, task.status,
+    `INSERT INTO tasks (id, name, description, template_id, cli_templates, status, stats, created_at, updated_at, completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [task.id, task.name, task.description, task.template_id, task.cli_templates ?? null, task.status,
      task.stats ? JSON.stringify(task.stats) : null,
      task.created_at, task.updated_at, task.completed_at]
   );
@@ -37,5 +37,13 @@ export async function updateTaskStats(id: string, stats: TaskStats): Promise<voi
   await run(
     `UPDATE tasks SET stats = ?, updated_at = ? WHERE id = ?`,
     [JSON.stringify(stats), updatedAt, id]
+  );
+}
+
+export async function updateTaskCliTemplates(id: string, cliTemplates: string | null): Promise<void> {
+  const updatedAt = now();
+  await run(
+    `UPDATE tasks SET cli_templates = ?, updated_at = ? WHERE id = ?`,
+    [cliTemplates, updatedAt, id],
   );
 }

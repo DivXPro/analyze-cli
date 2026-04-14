@@ -104,11 +104,27 @@ export interface Task {
   name: string;
   description: string | null;
   template_id: string | null;
+  cli_templates: string | null;
   status: TaskStatus;
   stats: TaskStats | null;
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;
+}
+
+export type TaskPostStatusValue = 'pending' | 'fetching' | 'done' | 'failed';
+
+export interface TaskPostStatus {
+  task_id: string;
+  post_id: string;
+  comments_fetched: boolean;
+  media_fetched: boolean;
+  comments_count: number;
+  media_count: number;
+  status: TaskPostStatusValue;
+  error: string | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface TaskStats {

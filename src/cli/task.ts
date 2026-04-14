@@ -37,6 +37,7 @@ export function taskCommands(program: Command): void {
         name: opts.name,
         description: opts.description ?? null,
         template_id: templateId,
+        cli_templates: null,
         status: 'pending',
         stats: { total: 0, done: 0, failed: 0 },
         created_at: now(),

@@ -148,6 +148,7 @@ export function getHandlers(): Record<string, Handler> {
         name: params.name as string,
         description: (params.description ?? null) as string | null,
         template_id: (params.template_id ?? null) as string | null,
+        cli_templates: null,
         status: 'pending',
         stats: { total: 0, done: 0, failed: 0 },
         created_at: now(),

@@ -88,22 +88,27 @@ CLI command
 - 统计结果：`analyze-cli result stats --task-id <taskId>`
 - 导出结果：`analyze-cli result export --task-id <taskId> --format json --output <path>`
 
-## 文档入口
+## 文档管理
 
-核心文档结构：
+- 文档规范入口：`docs/index.md`（含 Skill/Agent 生成文档存放规则）
+- 所有 skill、agent 自动生成的新文档必须按规范存放到 `docs/` 对应子目录
+
+### 核心文档结构
 
 - 架构说明：`ARCHITECTURE.md`
-- agent 主入口：`AGENTS.md`
+- agent 主入口：`AGENTS.md`（本文件）
 - 详细文档目录：`docs/`
 - 项目 agent 编排包：`agents/`
 
-`docs/` 内推荐阅读顺序：
+### 推荐阅读顺序
 
-1. `docs/DESIGN.md`
-2. `docs/PLANS.md`
-3. `docs/product-specs/index.md`
-4. `docs/design-docs/index.md`
-5. `docs/generated/db-schema.md`
+1. `AGENTS.md`
+2. `ARCHITECTURE.md`
+3. `docs/DESIGN.md`
+4. `docs/PLANS.md`
+5. `docs/product-specs/index.md`
+6. `docs/design-docs/index.md`
+7. `docs/generated/db-schema.md`
 
 ## 项目 Agent 入口文件
 

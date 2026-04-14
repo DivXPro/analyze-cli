@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at TIMESTAMP
 );
 
+-- tasks.cli_templates: JSON string of opencli command templates
+-- ALTER TABLE tasks ADD COLUMN cli_templates TEXT;
+
 CREATE TABLE IF NOT EXISTS task_targets (
     id          TEXT PRIMARY KEY,
     task_id     TEXT NOT NULL REFERENCES tasks(id),
@@ -163,6 +166,22 @@ CREATE TABLE IF NOT EXISTS queue_jobs (
     created_at      TIMESTAMP DEFAULT NOW(),
     processed_at    TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS task_post_status (
+  task_id         TEXT NOT NULL REFERENCES tasks(id),
+  post_id         TEXT NOT NULL,
+  comments_fetched BOOLEAN DEFAULT FALSE,
+  media_fetched   BOOLEAN DEFAULT FALSE,
+  comments_count  INTEGER DEFAULT 0,
+  media_count     INTEGER DEFAULT 0,
+  status          TEXT DEFAULT 'pending' CHECK(status IN ('pending','fetching','done','failed')),
+  error           TEXT,
+  created_at      TIMESTAMP DEFAULT NOW(),
+  updated_at      TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (task_id, post_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_post_status_task ON task_post_status(task_id);
 
 CREATE INDEX IF NOT EXISTS idx_posts_platform ON posts(platform_id);
 CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published_at);
