@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test": "node --test --experimental-strip-types 'test/*.test.ts'",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

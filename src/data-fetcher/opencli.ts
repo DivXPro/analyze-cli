@@ -31,7 +31,7 @@ export async function fetchViaOpencli(
   }
 
   // Parse template into command + args (split on whitespace, first token is executable)
-  const tokens = template.trim().split(/\s+/);
+  const tokens = template.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) {
     return { success: false, error: 'Empty command template' };
   }
@@ -71,12 +71,15 @@ export async function fetchViaOpencli(
 
     return { success: true, data: [data] };
   } catch (err: unknown) {
-    if (err instanceof Error && 'code' in err && err.code === 'ETIMEOUT') {
+    const execErr = err as { code?: string | null; killed?: boolean; signal?: string | null; stderr?: string };
+    // execFile timeout: kills process, code is null, killed is true
+    if (execErr.killed === true && execErr.code === null) {
       return { success: false, error: `Command timed out after ${timeoutMs}ms: ${command}` };
     }
     const message = err instanceof Error ? err.message : String(err);
-    // Extract stderr if available
-    const execErr = err as { stderr?: string };
+    if (message.includes('timed out') || message.includes('timeout')) {
+      return { success: false, error: `Command timed out after ${timeoutMs}ms: ${command}` };
+    }
     const detail = execErr.stderr?.trim() ?? message;
     return { success: false, error: detail };
   }
