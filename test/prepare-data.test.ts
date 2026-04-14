@@ -20,6 +20,8 @@ import * as opencli from '../dist/data-fetcher/opencli.js';
 const { fetchViaOpencli } = opencli;
 import * as comments from '../dist/db/comments.js';
 const { createComment, listCommentsByPost } = comments;
+import * as mediaFiles from '../dist/db/media-files.js';
+const { createMediaFile, listMediaFilesByPost } = mediaFiles;
 import * as queueJobs from '../dist/db/queue-jobs.js';
 const { enqueueJobs, getNextJob, updateJobStatus, listJobsByTask } = queueJobs;
 import * as utils from '../dist/shared/utils.js';
@@ -59,9 +61,10 @@ describe('prepare-data E2E — real opencli data', { timeout: 60000 }, () => {
     });
     postId = post.id;
 
-    // Create task with cli_templates
+    // Create task with cli_templates (comments + media)
     const cliTemplates = JSON.stringify({
       fetch_comments: 'opencli hackernews top --limit {limit} -f json',
+      fetch_media: 'opencli producthunt today -f json',
     });
     await createTask({
       id: TEST_TASK_ID,
@@ -164,6 +167,50 @@ describe('prepare-data E2E — real opencli data', { timeout: 60000 }, () => {
     console.log(`  Imported ${imported} comments into DuckDB`);
   });
 
+  it('should import media files into DuckDB from opencli data', async () => {
+    const task = await getTaskById(TEST_TASK_ID);
+    const templates = JSON.parse(task!.cli_templates!);
+    const result = await fetchViaOpencli(
+      templates.fetch_media,
+      { post_id: postId },
+      30000,
+    );
+    assert.equal(result.success, true, `media fetch failed: ${result.error}`);
+    assert.ok(result.data!.length > 0, 'expected at least 1 media item');
+
+    // Import media (using URL from opencli data as media URL)
+    let imported = 0;
+    for (const item of result.data!.slice(0, 3)) {
+      if (typeof item !== 'object' || item === null) continue;
+      const obj = item as Record<string, unknown>;
+      const mediaUrl = (obj.url ?? obj.image_url ?? obj.thumbnail ?? `https://example.com/${imported}`) as string;
+      try {
+        await createMediaFile({
+          post_id: postId,
+          comment_id: null,
+          platform_id: TEST_PLATFORM,
+          media_type: 'image',
+          url: mediaUrl,
+          local_path: null,
+          width: null,
+          height: null,
+          duration_ms: null,
+          file_size: null,
+          downloaded_at: null,
+        });
+        imported++;
+      } catch {
+        // Skip duplicates
+      }
+    }
+    assert.ok(imported > 0, `expected at least 1 media imported, got ${imported}`);
+
+    const mediaList = await listMediaFilesByPost(postId);
+    assert.equal(mediaList.length, imported);
+    assert.ok(mediaList.every(m => m.url.startsWith('http')), 'all media should have valid URLs');
+    console.log(`  Imported ${imported} media files into DuckDB`);
+  });
+
   it('should track progress in task_post_status', async () => {
     // Initialize status
     await upsertTaskPostStatus(TEST_TASK_ID, postId, { status: 'pending' });
@@ -259,12 +306,15 @@ describe('prepare-data E2E — real opencli data', { timeout: 60000 }, () => {
     const commentList = await listCommentsByPost(postId, 100);
     assert.ok(commentList.length > 0, 'expected comments from opencli data');
 
+    const mediaList = await listMediaFilesByPost(postId);
+    assert.ok(mediaList.length > 0, 'expected media from opencli data');
+
     const taskJobs = await listJobsByTask(TEST_TASK_ID);
     assert.ok(taskJobs.length > 0, 'expected queue jobs');
 
     const statuses = await getTaskPostStatuses(TEST_TASK_ID);
     assert.ok(statuses.length > 0, 'expected task_post_status records');
 
-    console.log(`  E2E chain verified: ${commentList.length} comments, ${taskJobs.length} jobs, ${statuses.length} status records`);
+    console.log(`  E2E chain verified: ${commentList.length} comments, ${mediaList.length} media, ${taskJobs.length} jobs, ${statuses.length} status records`);
   });
 });
