@@ -70,6 +70,7 @@ function resolveEnvVariables(obj: unknown): unknown {
 }
 
 export function loadConfig(): Config {
+  // Load file config first (highest priority)
   const configPath = expandPath('~/.analyze-cli/config.json');
   let fileConfig: Partial<Config> = {};
   if (fs.existsSync(configPath)) {
@@ -77,9 +78,21 @@ export function loadConfig(): Config {
       const content = fs.readFileSync(configPath, 'utf-8');
       fileConfig = JSON.parse(content) as Partial<Config>;
     } catch {
-      // ignore
+      // ignore parse errors
     }
   }
+
+  // Claude Code config fallback (lowest priority)
+  const claudeConfig = loadClaudeConfig();
+  const claudeFallback: Partial<Config> = {
+    anthropic: {
+      api_key: claudeConfig.api_key ?? '',
+      base_url: claudeConfig.base_url ?? '',
+      model: '',
+      max_tokens: 4096,
+      temperature: 0.3,
+    },
+  };
 
   // Environment variable overrides
   const envConfig: Partial<Config> = {
@@ -103,20 +116,10 @@ export function loadConfig(): Config {
     },
   };
 
-  // Claude Code config fallback
-  const claudeConfig = loadClaudeConfig();
-  if (!envConfig.anthropic?.api_key && !fileConfig.anthropic?.api_key) {
-    if (claudeConfig.api_key) {
-      if (!envConfig.anthropic) envConfig.anthropic = { ...DEFAULT_CONFIG.anthropic };
-      envConfig.anthropic.api_key = claudeConfig.api_key;
-    }
-  }
-  if (claudeConfig.base_url) {
-    if (!envConfig.anthropic) envConfig.anthropic = { ...DEFAULT_CONFIG.anthropic };
-    (envConfig.anthropic as Record<string, unknown>).base_url = claudeConfig.base_url;
-  }
-
-  const resolved = deepMerge(DEFAULT_CONFIG, fileConfig);
+  // Merge order: DEFAULT → claudeFallback → fileConfig → envConfig
+  // deepMerge skips empty strings, so env vars won't override file config with empty values
+  const withClaude = deepMerge(DEFAULT_CONFIG, claudeFallback);
+  const resolved = deepMerge(withClaude, fileConfig);
   const withEnv = deepMerge(resolved, envConfig);
   return resolveEnvVariables(withEnv) as Config;
 }
