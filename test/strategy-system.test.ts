@@ -33,16 +33,25 @@ describe('strategy system', { timeout: 15000 }, () => {
     await runMigrations();
     await query("DELETE FROM analysis_results WHERE task_id = 'test-task'");
     await query("DELETE FROM analysis_results WHERE task_id = 'daemon-analyze-task'");
+    await query("DELETE FROM analysis_results WHERE task_id LIKE 'e2e-task-%'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
     await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
+    await query("DELETE FROM queue_jobs WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_targets WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM comments WHERE platform_id LIKE 'e2e_%'");
+    await query("DELETE FROM media_files WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
+    await query("DELETE FROM posts WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM tasks WHERE id = 'test-task'");
     await query("DELETE FROM tasks WHERE id = 'daemon-analyze-task'");
+    await query("DELETE FROM tasks WHERE id LIKE 'e2e-task-%'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
     await query("DELETE FROM strategies WHERE id = 'daemon-strategy-1'");
+    await query("DELETE FROM strategies WHERE id LIKE 'e2e-%'");
     await query("DELETE FROM platforms WHERE name = 'Test Platform'");
+    await query("DELETE FROM platforms WHERE id LIKE 'e2e_%'");
   });
 
   it('should have strategies table', async () => {
@@ -333,18 +342,81 @@ describe('strategy system', { timeout: 15000 }, () => {
     }
   });
 
+  it('should run e2e: import strategy, create task, add post, analyze run', async () => {
+    const platformId = `e2e_${Date.now()}`;
+    await createPlatform({ id: platformId, name: 'E2E Platform', description: null });
+    const post = await createPost({
+      platform_id: platformId,
+      platform_post_id: 'e2e_post_1',
+      title: 'E2E Post',
+      content: 'This is an e2e test post',
+      author_id: null,
+      author_name: 'Bot',
+      author_url: null,
+      url: null,
+      cover_url: null,
+      post_type: 'text',
+      like_count: 0, collect_count: 0, comment_count: 0, share_count: 0, play_count: 0,
+      score: null, tags: null, media_files: null,
+      published_at: new Date(), metadata: null,
+    });
+
+    const taskId = `e2e-task-${Date.now()}`;
+    await createTask({
+      id: taskId, name: 'E2E Task', description: null, template_id: null, cli_templates: null,
+      status: 'pending', stats: { total: 0, done: 0, failed: 0 },
+      created_at: new Date(), updated_at: new Date(), completed_at: null,
+    });
+    await addTaskTargets(taskId, 'post', [post.id]);
+
+    const strategyId = `e2e-strategy-${Date.now()}`;
+    const strategyFile = testPath.join(process.cwd(), 'test-data', 'mock', `e2e-strategy-${Date.now()}.json`);
+    testFs.writeFileSync(strategyFile, JSON.stringify({
+      id: strategyId,
+      name: 'E2E Strategy',
+      version: '1.0.0',
+      target: 'post',
+      prompt: 'Analyze post: {{content}}',
+      output_schema: {
+        columns: [{ name: 'score', type: 'number', label: 'Score' }],
+        json_fields: [{ name: 'tags', type: 'array', label: 'Tags' }],
+      },
+    }));
+
+    try {
+      const handlers = getHandlers();
+      const importResult = await handlers['strategy.import']({ file: strategyFile }) as any;
+      assert.equal(importResult.imported, true);
+      assert.equal(importResult.id, strategyId);
+
+      const runResult = await handlers['analyze.run']({ task_id: taskId, strategy: strategyId }) as any;
+      assert.equal(runResult.enqueued, 1);
+    } finally {
+      testFs.unlinkSync(strategyFile);
+    }
+  });
+
   after(async () => {
     await query("DELETE FROM analysis_results WHERE task_id = 'test-task'");
     await query("DELETE FROM analysis_results WHERE task_id = 'daemon-analyze-task'");
+    await query("DELETE FROM analysis_results WHERE task_id LIKE 'e2e-task-%'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
     await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
+    await query("DELETE FROM queue_jobs WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_targets WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM comments WHERE platform_id LIKE 'e2e_%'");
+    await query("DELETE FROM media_files WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
+    await query("DELETE FROM posts WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM tasks WHERE id = 'test-task'");
     await query("DELETE FROM tasks WHERE id = 'daemon-analyze-task'");
+    await query("DELETE FROM tasks WHERE id LIKE 'e2e-task-%'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
     await query("DELETE FROM strategies WHERE id = 'daemon-strategy-1'");
+    await query("DELETE FROM strategies WHERE id LIKE 'e2e-%'");
     await query("DELETE FROM platforms WHERE name = 'Test Platform'");
+    await query("DELETE FROM platforms WHERE id LIKE 'e2e_%'");
   });
 });
