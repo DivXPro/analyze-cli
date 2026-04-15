@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS queue_jobs (
     task_id         TEXT NOT NULL REFERENCES tasks(id),
     target_type     TEXT,
     target_id       TEXT,
-    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed')),
+    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending','waiting_media','processing','completed','failed')),
     priority        INTEGER DEFAULT 0,
     attempts        INTEGER DEFAULT 0,
     max_attempts    INTEGER DEFAULT 3,
@@ -192,3 +192,38 @@ CREATE INDEX IF NOT EXISTS idx_analysis_results_comments_task ON analysis_result
 CREATE INDEX IF NOT EXISTS idx_analysis_results_comments_sentiment ON analysis_results_comments(sentiment_label);
 CREATE INDEX IF NOT EXISTS idx_analysis_results_media_task ON analysis_results_media(task_id);
 CREATE INDEX IF NOT EXISTS idx_queue_jobs_status ON queue_jobs(status);
+
+CREATE TABLE IF NOT EXISTS strategies (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    version         TEXT NOT NULL DEFAULT '1.0.0',
+    target          TEXT NOT NULL CHECK(target IN ('post', 'comment')),
+    needs_media     JSON,
+    prompt          TEXT NOT NULL,
+    output_schema   JSON NOT NULL,
+    file_path       TEXT,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS analysis_results (
+    id              TEXT PRIMARY KEY,
+    task_id         TEXT REFERENCES tasks(id),
+    strategy_id     TEXT REFERENCES strategies(id),
+    strategy_version TEXT NOT NULL,
+    target_type     TEXT NOT NULL CHECK(target_type IN ('post', 'comment')),
+    target_id       TEXT NOT NULL,
+    post_id         TEXT REFERENCES posts(id),
+    columns         JSON NOT NULL,
+    json_fields     JSON NOT NULL,
+    raw_response    JSON,
+    error           TEXT,
+    analyzed_at     TIMESTAMP DEFAULT NOW(),
+    UNIQUE(task_id, strategy_id, target_type, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_results_task ON analysis_results(task_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_results_strategy ON analysis_results(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_results_target ON analysis_results(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_results_post ON analysis_results(post_id);
