@@ -8,6 +8,8 @@ import { taskCommands } from './task';
 import { taskPrepareCommands } from './task-prepare';
 import { templateCommands } from './template';
 import { resultCommands, resultMediaCommands } from './result';
+import { strategyCommands } from './strategy';
+import { analyzeCommands } from './analyze';
 
 const program = new Command();
 
@@ -40,6 +42,12 @@ templateCommands(program);
 // Result commands
 resultCommands(program);
 resultMediaCommands(program);
+
+// Strategy commands
+strategyCommands(program);
+
+// Analyze commands
+analyzeCommands(program);
 
 program.parse(process.argv);
 
