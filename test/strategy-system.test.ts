@@ -276,24 +276,27 @@ describe('strategy system', { timeout: 15000 }, () => {
   });
 
   it('should insert and list strategy results dynamically', async () => {
+    const taskId = `dyn-task-${Date.now()}`;
+    const targetId = `dyn-post-${Date.now()}`;
     await insertStrategyResult('test_schema_1', {
-      task_id: 'task-1',
+      task_id: taskId,
       target_type: 'post',
-      target_id: 'post-1',
-      post_id: 'post-1',
+      target_id: targetId,
+      post_id: targetId,
       strategy_version: '1.0.0',
       raw_response: { score: 5 },
       error: null,
       analyzed_at: new Date(),
     }, ['score', 'level'], [4.5, 'high']);
 
-    const rows = await listStrategyResultsByTask('test_schema_1', 'task-1');
+    const rows = await listStrategyResultsByTask('test_schema_1', taskId);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].score, 4.5);
     assert.equal(rows[0].level, 'high');
   });
 
   after(async () => {
+    await query("DELETE FROM analysis_results_strategy_test_schema_1 WHERE task_id = 'task-1'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");

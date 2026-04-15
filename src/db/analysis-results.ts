@@ -1,6 +1,6 @@
 import { query, run } from './client';
 import { AnalysisResult } from '../shared/types';
-import { generateId, now } from '../shared/utils';
+import { generateId } from '../shared/utils';
 import { getStrategyResultTableName } from './strategies';
 
 export async function insertStrategyResult(
