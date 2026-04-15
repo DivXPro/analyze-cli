@@ -162,6 +162,25 @@ async function stopDaemon(): Promise<void> {
   await new Promise(r => setTimeout(r, DAEMON_STOP_WAIT_MS));
 }
 
+function extractNoteId(item: any, noteIdField: string): string | undefined {
+  const direct = item[noteIdField] ?? item.note_id ?? item.id ?? item.noteId ?? item.platform_post_id;
+  if (direct) return String(direct);
+  const url = item.url ?? item.link;
+  if (typeof url === 'string') {
+    try {
+      const parsed = new URL(url);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const last = segments[segments.length - 1];
+      if (last && /^[a-f0-9]{16,24}$/i.test(last)) {
+        return last;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
+
 async function main() {
   const opts = parseArgs();
   await fs.promises.mkdir(opts.outputDir, { recursive: true });
@@ -185,7 +204,7 @@ async function main() {
   // Transform to import-compatible JSONL
   const postsForImport = postsRaw.map((item: any, idx: number) => ({
     ...item,
-    platform_post_id: item[opts.noteIdField] ?? item.id ?? item.noteId ?? `post_${idx}`,
+    platform_post_id: extractNoteId(item, opts.noteIdField) ?? `post_${idx}`,
   }));
   const postsJsonlFile = path.join(opts.outputDir, 'posts_transformed.jsonl');
   fs.writeFileSync(postsJsonlFile, postsForImport.map(p => JSON.stringify(p)).join('\n') + '\n');
@@ -220,12 +239,80 @@ async function main() {
   }
   console.log(`[record] Post import stdout: ${importResult.stdout.trim()}`);
 
-  // --- Retrieve imported posts via CLI ---
-  const listResult = await runAnalyzeCli(['post', 'list', '--platform', opts.platform, '--limit', String(opts.limit)]);
-  if (!listResult.success) {
-    throw new Error(`Post list failed: ${listResult.error}`);
+  // Parse imported post IDs from stdout
+  const postIdMatch = importResult.stdout.match(/Post IDs: (.+)/);
+  const importedPostIds = postIdMatch ? postIdMatch[1].split(',') : [];
+  if (importedPostIds.length === 0) {
+    console.warn('[record] No post IDs returned from import; falling back to raw data for note_id extraction');
   }
-  console.log(`[record] Post list stdout: ${listResult.stdout.trim()}`);
+
+  const manifest: any = {
+    platform: opts.platform,
+    query: opts.query,
+    limit: opts.limit,
+    recordedAt: new Date().toISOString(),
+    posts: importedPostIds,
+    fixtures: {
+      posts: 'posts_transformed.jsonl',
+      comments: [] as string[],
+      media: [] as string[],
+    },
+    failures: [] as string[],
+  };
+
+  for (let idx = 0; idx < postsForImport.length; idx++) {
+    const item = postsForImport[idx];
+    const postId = importedPostIds[idx] ?? `unknown_${idx}`;
+    const noteId = extractNoteId(item, opts.noteIdField) ?? `note_${idx}`;
+
+    console.log(`[record] Processing post ${postId} (note_id=${noteId})`);
+
+    // Comments
+    const commentsFile = path.join(opts.outputDir, `comments_${postId}.jsonl`);
+    console.log(`[record]   Fetching comments...`);
+    const commentsResult = await runOpencli(opts.commentsTemplate, { note_id: noteId, post_id: postId });
+    if (commentsResult.success && (commentsResult.data ?? []).length > 0) {
+      const comments = commentsResult.data!;
+      fs.writeFileSync(commentsFile, comments.map((c: any) => JSON.stringify(c)).join('\n') + '\n');
+      manifest.fixtures.comments.push(path.basename(commentsFile));
+
+      // Import comments via CLI
+      const commentImportResult = await runAnalyzeCli([
+        'comment', 'import',
+        '--platform', opts.platform,
+        '--post-id', postId,
+        '--file', commentsFile,
+      ]);
+      if (commentImportResult.success) {
+        console.log(`[record]   Comments imported: ${commentImportResult.stdout.trim()}`);
+      } else {
+        console.warn(`[record]   Comment import warning: ${commentImportResult.error}`);
+        manifest.failures.push(`comment-import-${postId}`);
+      }
+    } else {
+      console.log(`[record]   No comments fetched (${commentsResult.error ?? 'empty'})`);
+      fs.writeFileSync(commentsFile, '');
+    }
+
+    // Media
+    const mediaFile = path.join(opts.outputDir, `media_${postId}.jsonl`);
+    console.log(`[record]   Fetching media...`);
+    const mediaResult = await runOpencli(opts.mediaTemplate, { note_id: noteId, post_id: postId });
+    if (mediaResult.success && (mediaResult.data ?? []).length > 0) {
+      const media = mediaResult.data!;
+      fs.writeFileSync(mediaFile, media.map((m: any) => JSON.stringify(m)).join('\n') + '\n');
+      manifest.fixtures.media.push(path.basename(mediaFile));
+      console.log(`[record]   Media saved: ${media.length} items`);
+    } else {
+      console.log(`[record]   No media fetched (${mediaResult.error ?? 'empty'})`);
+      fs.writeFileSync(mediaFile, '');
+    }
+  }
+
+  // Write manifest
+  const manifestFile = path.join(opts.outputDir, 'manifest.json');
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
+  console.log(`[record] Manifest written: ${manifestFile}`);
 }
 
 main().catch(err => {
