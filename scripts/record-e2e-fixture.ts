@@ -181,6 +181,17 @@ function extractNoteId(item: any, noteIdField: string): string | undefined {
   return undefined;
 }
 
+function resolveMediaDownloadDir(template: string, vars: Record<string, string | number>): string {
+  let cmd = template;
+  for (const [key, value] of Object.entries(vars)) {
+    cmd = cmd.split(`{${key}}`).join(String(value));
+  }
+  const tokens = cmd.trim().split(/\s+/).filter(Boolean);
+  const outIdx = tokens.findIndex(t => t === '--output' || t === '-o');
+  const rawDir = outIdx !== -1 && tokens[outIdx + 1] ? tokens[outIdx + 1] : './xiaohongshu-downloads';
+  return path.resolve(rawDir);
+}
+
 function generateOfflineTest(opts: RecordOptions, manifest: any): string {
   const testName = `import-recorded-${opts.platform}`;
   const testFile = path.join(process.cwd(), 'test', `${testName}.test.ts`);
@@ -337,7 +348,7 @@ describe('import — recorded ${opts.platform} fixture', { timeout: 30000 }, () 
             platform_id: MANIFEST.platform,
             media_type: (item.type ?? 'image') as any,
             url: (item.url ?? \`https://example.com/\${postId}_\${imported}\`) as string,
-            local_path: item.local_path ?? null,
+            local_path: item.local_path ? path.join(FIXTURE_DIR, item.local_path) : null,
             width: item.width ? Number(item.width) : null,
             height: item.height ? Number(item.height) : null,
             duration_ms: item.duration_ms ? Number(item.duration_ms) : null,
@@ -492,7 +503,25 @@ async function main() {
     console.log(`[record]   Fetching media...`);
     const mediaResult = await runOpencli(opts.mediaTemplate, { note_url: noteUrl, note_id: noteId, post_id: postId });
     if (mediaResult.success && (mediaResult.data ?? []).length > 0) {
-      const media = mediaResult.data!;
+      const media = mediaResult.data! as any[];
+      const downloadDir = resolveMediaDownloadDir(opts.mediaTemplate, { note_url: noteUrl, note_id: noteId, post_id: postId });
+      const noteDownloadDir = path.join(downloadDir, noteId);
+      const fixtureMediaDir = path.join(opts.outputDir, 'media_files', postId);
+      if (fs.existsSync(noteDownloadDir)) {
+        const downloadedFiles = fs.readdirSync(noteDownloadDir);
+        for (const item of media) {
+          const idx = item.index;
+          if (idx == null) continue;
+          const matched = downloadedFiles.find(f => new RegExp(`^${noteId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_${idx}\\.`).test(f));
+          if (matched) {
+            fs.mkdirSync(fixtureMediaDir, { recursive: true });
+            const src = path.join(noteDownloadDir, matched);
+            const dst = path.join(fixtureMediaDir, matched);
+            fs.copyFileSync(src, dst);
+            item.local_path = path.relative(opts.outputDir, dst).replace(/\\/g, '/');
+          }
+        }
+      }
       fs.writeFileSync(mediaFile, media.map((m: any) => JSON.stringify(m)).join('\n') + '\n');
       console.log(`[record]   Media saved: ${media.length} items`);
     } else {

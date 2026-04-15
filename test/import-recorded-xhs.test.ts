@@ -149,7 +149,7 @@ describe('import — recorded xhs fixture', { timeout: 30000 }, () => {
             platform_id: MANIFEST.platform,
             media_type: (item.type ?? 'image') as any,
             url: (item.url ?? `https://example.com/${postId}_${imported}`) as string,
-            local_path: item.local_path ?? null,
+            local_path: item.local_path ? path.join(FIXTURE_DIR, item.local_path) : null,
             width: item.width ? Number(item.width) : null,
             height: item.height ? Number(item.height) : null,
             duration_ms: item.duration_ms ? Number(item.duration_ms) : null,
