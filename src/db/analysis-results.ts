@@ -1,5 +1,5 @@
 import { query, run } from './client';
-import { AnalysisResultComment, AnalysisResultMedia } from '../shared/types';
+import { AnalysisResultComment, AnalysisResultMedia, AnalysisResult } from '../shared/types';
 import { generateId, now } from '../shared/utils';
 
 export async function createAnalysisResultComment(result: Omit<AnalysisResultComment, 'id'>): Promise<void> {
@@ -86,4 +86,37 @@ export async function aggregateStats(taskId: string): Promise<Record<string, unk
     }, {}),
     risk_flagged: Number(riskStats[0]?.cnt ?? 0),
   };
+}
+
+export async function createAnalysisResult(result: Omit<AnalysisResult, 'id'>): Promise<void> {
+  const id = generateId();
+  await run(
+    `INSERT INTO analysis_results (id, task_id, strategy_id, strategy_version, target_type, target_id, post_id, columns, json_fields, raw_response, error, analyzed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, result.task_id, result.strategy_id, result.strategy_version, result.target_type,
+      result.target_id, result.post_id ?? null,
+      JSON.stringify(result.columns),
+      JSON.stringify(result.json_fields),
+      result.raw_response ? JSON.stringify(result.raw_response) : null,
+      result.error, result.analyzed_at,
+    ]
+  );
+}
+
+export async function listAnalysisResultsByTask(taskId: string, limit = 100): Promise<AnalysisResult[]> {
+  return query<AnalysisResult>(
+    'SELECT * FROM analysis_results WHERE task_id = ? ORDER BY analyzed_at DESC LIMIT ?',
+    [taskId, limit]
+  );
+}
+
+export async function getExistingResultIds(taskId: string, strategyId: string, targetType: string, targetIds: string[]): Promise<string[]> {
+  if (targetIds.length === 0) return [];
+  const placeholders = targetIds.map(() => '?').join(',');
+  const rows = await query<{ target_id: string }>(
+    `SELECT target_id FROM analysis_results WHERE task_id = ? AND strategy_id = ? AND target_type = ? AND target_id IN (${placeholders})`,
+    [taskId, strategyId, targetType, ...targetIds]
+  );
+  return rows.map(r => r.target_id);
 }

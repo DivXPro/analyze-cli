@@ -4,6 +4,10 @@ import * as db from '../dist/db/client.js';
 const { query, close: closeDb } = db;
 import * as migrate from '../dist/db/migrate.js';
 const { runMigrations } = migrate;
+import * as strategies from '../dist/db/strategies.js';
+const { createStrategy, getStrategyById, listStrategies, validateStrategyJson } = strategies;
+import * as analysisResults from '../dist/db/analysis-results.js';
+const { createAnalysisResult, getExistingResultIds } = analysisResults;
 
 describe('strategy system', { timeout: 15000 }, () => {
   before(async () => {
@@ -59,5 +63,28 @@ describe('strategy system', { timeout: 15000 }, () => {
   it('should import strategy types without error', async () => {
     const { Strategy, StrategyOutputSchema } = await import('../dist/shared/types.js');
     assert.ok(Strategy === undefined); // interfaces are erased at runtime
+  });
+
+  it('should create and retrieve a strategy', async () => {
+    const strategy = {
+      id: 'test-strategy-1',
+      name: 'Test Strategy',
+      description: 'A test strategy',
+      version: '1.0.0',
+      target: 'post' as const,
+      needs_media: { enabled: false },
+      prompt: 'Analyze {{content}}',
+      output_schema: { columns: [], json_fields: [] },
+      file_path: null,
+    };
+    await createStrategy(strategy);
+    const found = await getStrategyById('test-strategy-1');
+    assert.ok(found);
+    assert.equal(found.name, 'Test Strategy');
+  });
+
+  it('should validate strategy JSON', () => {
+    assert.ok(validateStrategyJson({ id: 's', name: 'S', target: 'post', prompt: 'P', output_schema: { columns: [], json_fields: [] } }).valid);
+    assert.ok(!validateStrategyJson({ name: 'S' }).valid);
   });
 });
