@@ -37,7 +37,7 @@ export async function insertStrategyResult(
     result.analyzed_at,
   ];
   await run(
-    `INSERT INTO ${tableName} (${columns.join(',')}) VALUES (${placeholders})`,
+    `INSERT INTO "${tableName}" (${columns.join(',')}) VALUES (${placeholders})`,
     values,
   );
 }
@@ -49,7 +49,7 @@ export async function listStrategyResultsByTask(
 ): Promise<AnalysisResult[]> {
   const tableName = getStrategyResultTableName(strategyId);
   return query<AnalysisResult>(
-    `SELECT * FROM ${tableName} WHERE task_id = ? ORDER BY analyzed_at DESC LIMIT ?`,
+    `SELECT * FROM "${tableName}" WHERE task_id = ? ORDER BY analyzed_at DESC LIMIT ?`,
     [taskId, limit],
   );
 }
@@ -60,7 +60,7 @@ export async function getStrategyResultStats(
 ): Promise<Record<string, unknown>> {
   const tableName = getStrategyResultTableName(strategyId);
   const total = await query<{ cnt: bigint }>(
-    `SELECT COUNT(*) as cnt FROM ${tableName} WHERE task_id = ?`,
+    `SELECT COUNT(*) as cnt FROM "${tableName}" WHERE task_id = ?`,
     [taskId],
   );
 
@@ -72,7 +72,7 @@ export async function getStrategyResultStats(
   const numericStats: Record<string, Record<string, number>> = {};
   for (const col of numericCols) {
     const rows = await query<{ avg: number | null; min: number | null; max: number | null }>(
-      `SELECT AVG(${col.column_name}) as avg, MIN(${col.column_name}) as min, MAX(${col.column_name}) as max FROM ${tableName} WHERE task_id = ?`,
+      `SELECT AVG(${col.column_name}) as avg, MIN(${col.column_name}) as min, MAX(${col.column_name}) as max FROM "${tableName}" WHERE task_id = ?`,
       [taskId],
     );
     numericStats[col.column_name] = {
@@ -90,7 +90,7 @@ export async function getStrategyResultStats(
   const textStats: Record<string, Record<string, number>> = {};
   for (const col of textCols) {
     const rows = await query<{ val: string; cnt: bigint }>(
-      `SELECT ${col.column_name} as val, COUNT(*) as cnt FROM ${tableName} WHERE task_id = ? AND ${col.column_name} IS NOT NULL GROUP BY ${col.column_name}`,
+      `SELECT ${col.column_name} as val, COUNT(*) as cnt FROM "${tableName}" WHERE task_id = ? AND ${col.column_name} IS NOT NULL GROUP BY ${col.column_name}`,
       [taskId],
     );
     textStats[col.column_name] = rows.reduce((acc, r) => {
@@ -116,7 +116,7 @@ export async function getExistingResultIds(
   const tableName = getStrategyResultTableName(strategyId);
   const placeholders = targetIds.map(() => '?').join(',');
   const rows = await query<{ target_id: string }>(
-    `SELECT target_id FROM ${tableName} WHERE task_id = ? AND target_type = ? AND target_id IN (${placeholders})`,
+    `SELECT target_id FROM "${tableName}" WHERE task_id = ? AND target_type = ? AND target_id IN (${placeholders})`,
     [taskId, targetType, ...targetIds],
   );
   return rows.map(r => r.target_id);

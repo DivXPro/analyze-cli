@@ -414,6 +414,65 @@ describe('strategy system', { timeout: 15000 }, () => {
     assert.ok(result.count >= 0);
   });
 
+  it('should run e2e: import strategy, create task, add post, analyze run', async () => {
+    const platformId = `e2e_${Date.now()}`;
+    await createPlatform({ id: platformId, name: 'E2E Platform', description: null });
+    const post = await createPost({
+      platform_id: platformId,
+      platform_post_id: 'e2e_post_1',
+      title: 'E2E Post',
+      content: 'This is an e2e test post',
+      author_id: null,
+      author_name: 'Bot',
+      author_url: null,
+      url: null,
+      cover_url: null,
+      post_type: 'text',
+      like_count: 0, collect_count: 0, comment_count: 0, share_count: 0, play_count: 0,
+      score: null, tags: null, media_files: null,
+      published_at: new Date(), metadata: null,
+    });
+
+    const taskId = `e2e-task-${Date.now()}`;
+    await createTask({
+      id: taskId, name: 'E2E Task', description: null, template_id: null, cli_templates: null,
+      status: 'pending', stats: { total: 0, done: 0, failed: 0 },
+      created_at: new Date(), updated_at: new Date(), completed_at: null,
+    });
+    const { addTaskTargets } = await import('../dist/db/task-targets.js');
+    await addTaskTargets(taskId, 'post', [post.id]);
+
+    const strategyId = `e2e-strategy-${Date.now()}`;
+    const strategyFile = testPath.join(process.cwd(), 'test-data', 'mock', `e2e-strategy-${Date.now()}.json`);
+    testFs.writeFileSync(strategyFile, JSON.stringify({
+      id: strategyId,
+      name: 'E2E Strategy',
+      target: 'post',
+      version: '1.0.0',
+      prompt: 'Analyze post: {{content}}',
+      output_schema: {
+        type: 'object',
+        properties: {
+          score: { type: 'number' },
+          tags: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }));
+
+    const handlers = getHandlers();
+    const importResult = await handlers['strategy.import']({ file: strategyFile }) as any;
+    assert.equal(importResult.imported, true);
+
+    const runResult = await handlers['analyze.run']({ task_id: taskId, strategy: strategyId }) as any;
+    assert.equal(runResult.enqueued, 1);
+
+    const jobs = await query('SELECT * FROM queue_jobs WHERE task_id = ? AND strategy_id = ?', [taskId, strategyId]);
+    assert.equal(jobs.length, 1);
+    assert.ok(jobs[0].status === 'pending' || jobs[0].status === 'waiting_media');
+
+    testFs.unlinkSync(strategyFile);
+  });
+
   after(async () => {
     await query("DELETE FROM analysis_results_strategy_test_schema_1 WHERE task_id = 'task-1'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
