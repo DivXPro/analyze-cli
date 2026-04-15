@@ -407,6 +407,13 @@ describe('strategy system', { timeout: 15000 }, () => {
     assert.equal(typeof stats.total, 'number');
   });
 
+  it('should export strategy results via daemon', async () => {
+    const handlers = getHandlers();
+    const result = await handlers['strategy.result.export']({ task_id: 'task-1', strategy_id: 'test_schema_1', format: 'json' }) as any;
+    assert.ok(typeof result.content === 'string');
+    assert.ok(result.count >= 0);
+  });
+
   after(async () => {
     await query("DELETE FROM analysis_results_strategy_test_schema_1 WHERE task_id = 'task-1'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");

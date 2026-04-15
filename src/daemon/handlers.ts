@@ -607,7 +607,7 @@ export function getHandlers(): Record<string, Handler> {
       if (targets.length === 0) throw new Error('No matching targets for this strategy');
 
       const targetIds = targets.map(t => t.target_id);
-      const existingIds = new Set(await getExistingResultIds(taskId, strategyId, strategy.target, targetIds));
+      const existingIds = new Set(await getExistingResultIds(strategyId, taskId, strategy.target, targetIds));
       const newTargets = targets.filter(t => !existingIds.has(t.target_id));
 
       const jobs: QueueJob[] = [];
