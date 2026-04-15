@@ -1,43 +1,98 @@
-# analyze-cli Agent Harness
+# analyze-cli Development Agent Harness
 
-这套编排包面向当前仓库已经实现的 `CLI -> task queue -> worker -> result export` 流程，目的是让 `superpowers` 先拆角色、再分阶段执行，而不是把导入、建任务、跑分析、读结果混成一次长对话。
+This harness is for **developing** the `analyze-cli` project, not for using it to analyze data. All agents are orchestrated through `superpowers` skills for structured, high-quality software development.
 
-## 入口文件
+## Agent Topology
 
-### 使用方 Agent（面向 CLI 使用者）
+```text
+orchestrator
+  |- project-architect
+  |- feature-developer
+  |- cli-developer
+  |- db-developer
+  |- integration-developer
+  `- test-engineer
+```
 
-- 主编排入口：`agents/social-media-analysis-harness.md`
-- 总控 agent：`agents/orchestrator.md`
-- 数据接入 agent：`agents/dataset-curator.md`
-- 模板与任务 agent：`agents/template-task-architect.md`
-- 运行监督 agent：`agents/run-supervisor.md`
-- 洞察输出 agent：`agents/insight-synthesizer.md`
+## Orchestration Flow
 
-### 开发方 Agent（面向 CLI 开发者）
+### Phase 0: Intake
+**Agent:** `orchestrator`
 
-- 项目架构师：`agents/project-architect.md`
-- 数据工程师：`agents/data-engineer.md`
-- CLI 开发者：`agents/cli-developer.md`
-- 集成工程师：`agents/integration-engineer.md`
+- Understand the user's development request
+- Determine if it's a bug fix, feature, refactor, or architectural change
+- Identify affected modules and required agents
+- If unclear, ask clarifying questions before proceeding
 
-## 适用场景
+**Recommended skill:** `superpowers:brainstorming`
 
-- 导入某个平台的帖子和评论，准备分析数据
-- 选择或微调 prompt 模板，并批量创建分析任务
-- 启动 daemon / worker，跟踪任务进度与失败项
-- 导出结果并生成产品反馈、风险、情绪分布等结论
+### Phase 1: Architecture & Planning
+**Agent:** `orchestrator` dispatches:
+- `project-architect` for multi-module or architectural changes
+- `feature-developer` for isolated feature work
 
-## 推荐的 Superpowers 编排方式
+Outputs:
+- Design spec in `docs/superpowers/specs/`
+- Implementation plan in `docs/superpowers/plans/`
 
-1. 用 `writing-plans` 明确本次目标、平台、数据源、分析模板和交付物。
-2. 用 `dispatching-parallel-agents` 并行派发 `dataset-curator` 与 `template-task-architect`。
-3. 用 `subagent-driven-development` 让 `run-supervisor` 接手执行与监控阶段。
-4. 在结果稳定后派发 `insight-synthesizer` 做统计、导出和结论整理。
-5. 如果中途改了模板或命令约定，再走一次 `requesting-code-review` 做回看。
+**Recommended skill:** `superpowers:writing-plans`
 
-## 设计原则
+### Phase 2: Implementation
+**Agent:** `orchestrator` dispatches the appropriate developer agent(s):
+- `cli-developer` — new/modified CLI commands
+- `db-developer` — schema, migration, CRUD changes
+- `integration-developer` — opencli, external API, data pipeline changes
+- `feature-developer` — cross-module feature implementation
 
-- 每个 agent 只负责一个阶段，避免跨阶段直接改动别人的产物。
-- 交接只传结构化摘要，不传冗长思维过程。
-- 所有命令都以当前仓库实际 CLI 为准，不假设额外服务存在。
-- 遇到输入不完整或业务目标含糊时，由总控先向用户补齐约束。
+**Recommended skill:** `superpowers:subagent-driven-development`
+
+### Phase 3: Testing & Verification
+**Agent:** `orchestrator` dispatches `test-engineer`
+
+- Verify tests cover the changes
+- Run the test suite
+- Report coverage gaps or failures
+
+**Recommended skill:** `superpowers:verification-before-completion`
+
+### Phase 4: Review & Merge
+**Agent:** `orchestrator`
+
+- Code review via `superpowers:requesting-code-review`
+- Merge or create PR via `superpowers:finishing-a-development-branch`
+
+## Agent Responsibilities
+
+| Agent | Responsibility |
+|-------|----------------|
+| `orchestrator` | Understand requirements, pick agents, enforce phase gates |
+| `project-architect` | Architecture decisions, module boundaries, tech choices |
+| `feature-developer` | End-to-end feature implementation across modules |
+| `cli-developer` | CLI commands, arguments, output formatting, error handling |
+| `db-developer` | DuckDB schema, migrations, CRUD modules, data flow |
+| `integration-developer` | opencli integration, external APIs, test data |
+| `test-engineer` | Test design, test implementation, test execution |
+
+## Design Principles
+
+- **Read before modifying** — always inspect existing code and patterns first
+- **One agent per responsibility** — don't mix CLI design with schema design in the same step
+- **Structured handoffs** — each phase produces documented artifacts (specs, plans, commits)
+- **Tests are mandatory** — no feature is complete without passing tests
+- **Worktree isolation** — implementation phases use isolated git worktrees
+
+## Command Mapping (for Development)
+
+```bash
+# Setup
+pnpm install
+pnpm build
+
+# Testing
+pnpm test:offline
+pnpm test
+node --test --experimental-strip-types 'test/<file>.test.ts'
+
+# CLI (for manual verification)
+node ./bin/analyze-cli.js <command>
+```

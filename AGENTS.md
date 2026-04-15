@@ -2,10 +2,7 @@
 
 ## 说明
 
-本文件是项目级 agent 工作入口。
-
-- `AGENTS.md` 是唯一主入口
-- 涉及 agent 编排、文档入口、执行约束时，优先以本文件和 `agents/` 目录为准
+本文件是 `analyze-cli` 项目的 **开发方 agent** 工作入口。所有 agent 均围绕项目代码开发、架构维护和功能迭代设计，通过 `superpowers` 技能进行编排执行。
 
 ## 项目概览
 
@@ -20,8 +17,6 @@ CLI command
   -> Anthropic analysis
   -> result query / export
 ```
-
-项目定位不是 Web 服务，而是一个可被 AI agent 或人工命令行直接调用的分析工具。
 
 ## 技术栈
 
@@ -61,32 +56,22 @@ CLI command
 - 规划文档里部分理想化 Bree 编排能力尚未完全成为当前实现
 - 高价值文档更新前，应先核对真实代码，不要只沿用规划稿
 
-## 推荐工作流
+## 推荐开发工作流
 
 ### 初始化
 
 - 安装依赖：`pnpm install`
 - 构建：`pnpm build`
 
-### 数据准备
+### 开发 Agent 编排
 
-- 导入帖子：`analyze-cli post import --platform <id> --file <posts.jsonl>`
-- 导入评论：`analyze-cli comment import --platform <id> --post-id <postId> --file <comments.jsonl>`
-- 核查数据：`analyze-cli post list`、`analyze-cli comment list`
-
-### 任务准备
-
-- 查看模板：`analyze-cli template list`
-- 创建任务：`analyze-cli task create --name "<name>" --template <templateName>`
-- 绑定目标：`analyze-cli task add-comments --task-id <taskId> --comment-ids <id1,id2>`
-
-### 执行与结果
-
-- daemon 状态：`analyze-cli daemon status`
-- 启动任务：`analyze-cli task start --task-id <taskId>`
-- 查看进度：`analyze-cli task status --task-id <taskId>`
-- 统计结果：`analyze-cli result stats --task-id <taskId>`
-- 导出结果：`analyze-cli result export --task-id <taskId> --format json --output <path>`
+1. **需求澄清**：`orchestrator` 判断需求类型和涉及模块
+2. **架构设计**：`project-architect` 产出设计文档（如需）
+3. **计划编写**：`orchestrator` 或 `project-architect` 产出 `docs/superpowers/plans/`
+4. **任务实现**：派发 `feature-developer`、`cli-developer`、`db-developer` 或 `integration-developer`
+5. **测试验证**：`test-engineer` 补充测试并执行
+6. **代码审查**：`superpowers:requesting-code-review`
+7. **合并收尾**：`superpowers:finishing-a-development-branch`
 
 ## 文档管理
 
@@ -97,87 +82,91 @@ CLI command
 
 - 架构说明：`ARCHITECTURE.md`
 - agent 主入口：`AGENTS.md`（本文件）
+- 技能入口：`SKILL.md`
 - 详细文档目录：`docs/`
 - 项目 agent 编排包：`agents/`
 
 ### 推荐阅读顺序
 
-1. `AGENTS.md`
-2. `ARCHITECTURE.md`
-3. `docs/DESIGN.md`
-4. `docs/PLANS.md`
-5. `docs/product-specs/index.md`
-6. `docs/design-docs/index.md`
-7. `docs/generated/db-schema.md`
+1. `SKILL.md`
+2. `AGENTS.md`
+3. `ARCHITECTURE.md`
+4. `docs/DESIGN.md`
+5. `docs/PLANS.md`
+6. `docs/product-specs/index.md`
+7. `docs/design-docs/index.md`
+8. `docs/generated/db-schema.md`
 
 ## 项目 Agent 入口文件
 
-项目根目录 `agents/` 是这套仓库的协作文档入口。<mccoremem id="03fxt3wab7n06ugtti28x07pu" />
-
-### 使用方 Agent（面向 CLI 使用者）
-
-主入口：
-
-- `agents/social-media-analysis-harness.md`
-
-角色入口：
-
-- `agents/orchestrator.md`
-- `agents/dataset-curator.md`
-- `agents/template-task-architect.md`
-- `agents/run-supervisor.md`
-- `agents/insight-synthesizer.md`
+项目根目录 `agents/` 是仓库的开发协作文档入口。
 
 ### 开发方 Agent（面向 CLI 开发者）
 
-- `agents/project-architect.md` — 项目架构、新模块设计
-- `agents/data-engineer.md` — 数据库 schema、migration、数据流
+主入口：
+
+- `agents/README.md` — harness 总览与编排流程
+
+角色入口：
+
+- `agents/orchestrator.md` — 开发需求总控、阶段编排
+- `agents/project-architect.md` — 架构设计、模块边界
+- `agents/feature-developer.md` — 跨模块功能实现
 - `agents/cli-developer.md` — CLI 命令开发、交互设计
-- `agents/integration-engineer.md` — opencli 集成、测试数据管理
-
-辅助说明：
-
-- `agents/README.md`
+- `agents/db-developer.md` — 数据库 schema、migration、数据流
+- `agents/integration-developer.md` — opencli 集成、外部 API 对接
+- `agents/test-engineer.md` — 测试策略、测试实现、测试执行
 
 ## Agent 职责
 
-### orchestrator
+### orchestrstrator
 
-- 需求澄清
-- 阶段编排
+- 需求澄清与分类
+- 阶段编排与 agent 派发
 - 串并行决策
 - 验收下游交接物
 
-### dataset-curator
+### project-architect
 
-- 导入帖子和评论
-- 核对数据是否落库
-- 交付可用目标 ID
+- 架构设计与技术选型
+- 模块边界划分
+- 产出设计文档和实现计划
 
-### template-task-architect
+### feature-developer
 
-- 选择和测试模板
-- 创建任务并绑定目标
-- 形成 task brief
+- 端到端功能实现
+- 跨模块协调
+- 按 plan 逐步推进并提交
 
-### run-supervisor
+### cli-developer
 
-- 检查 daemon
-- 启动任务和跟踪进度
-- 汇总执行异常
+- CLI 命令设计与实现
+- 参数约定和输出格式
+- 命令注册和错误处理
 
-### insight-synthesizer
+### db-developer
 
-- 聚合结果
-- 抽样核查
-- 导出与总结
+- DuckDB schema 设计
+- migration 管理
+- CRUD 模块实现
+
+### integration-developer
+
+- 外部工具集成
+- 数据获取管道
+- 测试数据管理
+
+### test-engineer
+
+- 测试策略制定
+- 测试用例编写
+- 测试执行与回归验证
 
 ## 给 Claude 的工作约束
 
 - 优先读取真实代码，再修改高价值文档
 - 不要把设计文档当成实现事实
 - 做 agent 编排时优先复用 `agents/` 下现有角色
-- 涉及任务执行时，先确认 daemon 和 task 状态
-- 需要结论时，优先给聚合统计和代表性样本
+- 新功能必须伴随测试
 - 如果需求含糊，先给用户方案选择，再继续执行
 - 涉及安装依赖、执行脚本或补充命令示例时，默认优先使用 `pnpm`
