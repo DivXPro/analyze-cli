@@ -12,6 +12,7 @@
 
 ## 当前活动计划
 
+- `exec-plans/active/2026-04-15-strategy-system.md` — 分析套路系统 P0 实施计划（策略导入、动态分析、Worker 支持）
 - `exec-plans/active/2026-04-14-xhs-ai-pipeline-agent-test-plan.md` — 小红书 AI 热帖 Agent 自动执行测试计划（opencli 抓取 + 导入 + 分析）
 
 ## 当前已归档内容
