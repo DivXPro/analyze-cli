@@ -1,117 +1,203 @@
-# analyze-cli Development Skill
+# analyze-cli 使用指南
 
-## Project Overview
+## 工具简介
 
-`analyze-cli` is a TypeScript/Node.js CLI tool for AI-powered social media content analysis. It uses DuckDB for storage, Bree for job scheduling, and Anthropic SDK for LLM analysis.
+`analyze-cli` 是一款 AI 驱动的社交媒体内容分析 CLI 工具。它支持导入帖子与评论数据，通过 Anthropic 大模型进行批量分析，并导出结构化结果。
 
-**Core flow:**
+**核心流程：**
 ```
-CLI -> DuckDB -> daemon -> worker -> Anthropic -> results
+导入数据 → 创建模板 → 装配任务 → 启动分析 → 查看/导出结果
 ```
 
-## Quick Start
+## 环境准备
+
+### 1. 安装依赖
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Build
-pnpm build
-
-# Run tests
-pnpm test:offline
 ```
 
-## Key Directories
-
-| Directory | Purpose |
-|-----------|---------|
-| `src/cli/` | CLI commands (platform, post, comment, task, template, result, daemon) |
-| `src/db/` | Schema, migrations, CRUD modules |
-| `src/daemon/` | IPC server, daemon lifecycle, worker pool |
-| `src/worker/` | Job consumer, Anthropic integration, result parsing |
-| `src/config/` | Configuration management |
-| `src/shared/` | Types, utilities, constants |
-| `test/` | Node.js built-in test framework tests |
-| `test-data/` | Mock data for offline tests |
-
-## Development Workflow
-
-### 1. Read Before Modifying
-Always read existing code in the target area before making changes. Key reference files:
-- `src/cli/index.ts` — command registration
-- `src/cli/task.ts` — complex command example
-- `src/db/schema.sql` — database schema
-- `src/db/migrate.ts` — migration strategy
-- `src/worker/consumer.ts` — worker main loop
-
-### 2. Adding a New CLI Command
-1. Read `src/cli/index.ts` and an existing command file
-2. Create or modify the command file in `src/cli/`
-3. Register it in `src/cli/index.ts`
-4. Update `AGENTS.md` if it changes the command surface
-5. Add tests in `test/`
-
-### 3. Modifying Database Schema
-1. Read `src/db/schema.sql` and `src/db/migrate.ts`
-2. Update `schema.sql` with new tables/columns
-3. Add migration logic in `migrate.ts` (use `information_schema.columns` for ALTER TABLE)
-4. Update `src/shared/types.ts`
-5. Add/update CRUD module in `src/db/`
-6. Add tests
-
-### 4. Testing
-- Use Node.js built-in `node:test` with `--experimental-strip-types`
-- Integration tests use real DuckDB (file-based)
-- Use timestamp-prefixed IDs to avoid conflicts across test runs
-- Offline tests: `pnpm test:offline`
-- Full tests: `pnpm test`
-
-### 5. Code Style
-- TypeScript strict mode
-- Use `picocolors` for CLI output colors
-- Parameterized queries for all DB operations
-- Fail fast: `process.exit(1)` on CLI errors
-- Each command starts with `runMigrations()` and `seedAll()`
-
-## Superpowers Integration
-
-This project uses the `superpowers` skill system for feature development:
-
-1. **Brainstorming** (`superpowers:brainstorming`) — Clarify requirements and create design specs in `docs/superpowers/specs/`
-2. **Planning** (`superpowers:writing-plans`) — Create implementation plans in `docs/superpowers/plans/`
-3. **Execution** (`superpowers:subagent-driven-development`) — Implement tasks in isolated worktrees
-4. **Finishing** (`superpowers:finishing-a-development-branch`) — Merge, PR, or clean up branches
-
-## Common Commands
+### 2. 编译
 
 ```bash
-# Build TypeScript
-npm run build
-
-# Watch build
-npm run dev
-
-# Run offline tests only
-npm run test:offline
-
-# Run all tests
-npm run test
-
-# Run specific test file
-node --test --experimental-strip-types 'test/import-offline.test.ts'
+pnpm build
 ```
 
-## Agent Harness
+### 3. 确认 CLI 可用
 
-Development agents are defined in `agents/`:
-- `orchestrator.md` — Development workflow orchestration
-- `project-architect.md` — Architecture and design
-- `feature-developer.md` — Feature implementation
-- `cli-developer.md` — CLI command development
-- `db-developer.md` — Database and schema work
-- `integration-developer.md` — External tool integrations
-- `test-engineer.md` — Testing and quality
-- `code-reviewer.md` — Architecture consistency, code quality, security, and logic review
+```bash
+node ./bin/analyze-cli.js --help
+```
 
-See `agents/README.md` for the full harness documentation.
+## 快速开始
+
+### 第一步：导入帖子数据
+
+帖子文件支持 **JSON 数组**（`.json`，推荐）和 **JSONL**（`.jsonl`）格式。
+
+```bash
+analyze-cli post import --platform xhs --file ./test-data/mock/xhs_posts.json
+```
+
+导入后查看：
+
+```bash
+analyze-cli post list --platform xhs --limit 20
+```
+
+### 第二步：导入评论数据
+
+```bash
+analyze-cli comment import --platform xhs --post-id <post-id> --file ./test-data/mock/xhs_comments.json
+```
+
+查看评论：
+
+```bash
+analyze-cli comment list --post-id <post-id> --limit 50
+```
+
+### 第三步：查看分析模板
+
+```bash
+analyze-cli template list
+```
+
+### 第四步：创建分析任务
+
+```bash
+analyze-cli task create --name "xhs情感分析" --template sentiment-topics
+```
+
+### 第五步：绑定分析目标
+
+绑定帖子：
+
+```bash
+analyze-cli task add-posts --task-id <task-id> --post-ids <post-id-1>,<post-id-2>
+```
+
+绑定评论：
+
+```bash
+analyze-cli task add-comments --task-id <task-id> --comment-ids <comment-id-1>,<comment-id-2>
+```
+
+### 第六步：启动 Daemon 并执行任务
+
+检查 daemon 状态：
+
+```bash
+analyze-cli daemon status
+```
+
+启动 daemon（如未运行）：
+
+```bash
+analyze-cli daemon start
+```
+
+启动任务：
+
+```bash
+analyze-cli task start --task-id <task-id>
+```
+
+查看进度：
+
+```bash
+analyze-cli task status --task-id <task-id>
+```
+
+### 第七步：查看和导出结果
+
+查看统计：
+
+```bash
+analyze-cli result stats --task-id <task-id>
+```
+
+导出为 JSON：
+
+```bash
+analyze-cli result export --task-id <task-id> --format json --output ./results.json
+```
+
+导出为 CSV：
+
+```bash
+analyze-cli result export --task-id <task-id> --format csv --output ./results.csv
+```
+
+## 数据文件格式
+
+### 帖子导入文件（JSON 数组，推荐）
+
+```json
+[
+  {
+    "noteId": "abc123",
+    "displayTitle": "标题",
+    "desc": "正文内容",
+    "user": { "userId": "u1", "nickname": "用户昵称" },
+    "interactInfo": { "likedCount": 100, "collectedCount": 10, "commentCount": 5 },
+    "type": "text",
+    "lastUpdateTime": "2025-04-10T10:30:00.000Z"
+  }
+]
+```
+
+### 帖子导入文件（JSONL）
+
+每行一个 JSON 对象：
+
+```jsonl
+{"noteId": "abc123", "displayTitle": "标题", "desc": "正文内容", ...}
+{"noteId": "def456", "displayTitle": "标题2", "desc": "正文内容2", ...}
+```
+
+### 评论导入文件
+
+与帖子类似，每行一个 JSON 对象（JSONL）或 JSON 数组（`.json`）：
+
+```json
+[
+  {
+    "id": "cmt001",
+    "content": "评论内容",
+    "user": { "userId": "u2", "nickname": "评论者" },
+    "likeCount": 10,
+    "publishedAt": "2025-04-10T11:00:00.000Z"
+  }
+]
+```
+
+## 常用命令速查
+
+| 命令 | 说明 |
+|------|------|
+| `post import --platform <id> --file <path>` | 导入帖子 |
+| `post list --platform <id>` | 列出帖子 |
+| `post search --platform <id> --query <keyword>` | 搜索帖子 |
+| `comment import --platform <id> --post-id <id> --file <path>` | 导入评论 |
+| `comment list --post-id <id>` | 列出评论 |
+| `template list` | 查看模板 |
+| `task create --name <name> [--template <name>]` | 创建任务 |
+| `task add-posts --task-id <id> --post-ids <ids>` | 绑定帖子 |
+| `task add-comments --task-id <id> --comment-ids <ids>` | 绑定评论 |
+| `task start --task-id <id>` | 启动分析任务 |
+| `task status --task-id <id>` | 查看任务进度 |
+| `task list` | 列出所有任务 |
+| `daemon status` | 查看 daemon 状态 |
+| `daemon start` | 启动 daemon |
+| `daemon stop` | 停止 daemon |
+| `result stats --task-id <id>` | 查看结果统计 |
+| `result export --task-id <id> --format <json/csv> --output <path>` | 导出结果 |
+
+## 注意事项
+
+- **数据文件格式**：默认优先使用 `.json`（JSON 数组），`.jsonl` 也继续支持。
+- **平台 ID**：导入时请确保 `--platform` 与实际数据源一致，便于后续检索。
+- **任务启动前务必启动 daemon**，否则任务无法被 worker 消费。
+- **结果导出**：JSON 格式便于二次处理，CSV 格式便于在表格软件中查看。
+- 所有数据存储在本地 DuckDB 文件中（默认 `~/.analyze-cli/data.duckdb`）。
