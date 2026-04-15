@@ -5,7 +5,6 @@ import * as path from 'path';
 import { fork, ChildProcess } from 'child_process';
 import { DAEMON_PID_FILE, IPC_SOCKET_PATH } from '../shared/constants';
 import { sendIpcRequest } from '../daemon/ipc-server';
-import { expandPath } from '../shared/utils';
 
 export function daemonCommands(program: Command): void {
   const daemon = program.command('daemon').description('Manage the analysis daemon');

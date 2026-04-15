@@ -67,6 +67,7 @@ export async function sendIpcRequest(method: string, params: Record<string, unkn
         if (!line.trim()) continue;
         try {
           const resp: JsonRpcResponse = JSON.parse(line);
+          socket.end();
           if (resp.error) {
             reject(new Error(resp.error.message));
           } else {
@@ -77,8 +78,17 @@ export async function sendIpcRequest(method: string, params: Record<string, unkn
         }
       }
     });
-    socket.on('error', reject);
-    socket.write(JSON.stringify(req) + '\n');
-    socket.end();
+    socket.on('error', (err) => {
+      socket.destroy();
+      reject(err);
+    });
+    socket.on('connect', () => {
+      socket.write(JSON.stringify(req) + '\n');
+    });
+    // Timeout fallback in case server is dead and neither connect nor error fires
+    setTimeout(() => {
+      socket.destroy();
+      reject(new Error('IPC request timeout'));
+    }, 5000);
   });
 }

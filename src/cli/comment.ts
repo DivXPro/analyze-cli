@@ -1,9 +1,6 @@
 import { Command } from 'commander';
 import * as pc from 'picocolors';
-import { createComment, listCommentsByPost, countComments } from '../db/comments';
-import { runMigrations } from '../db/migrate';
-import { seedAll } from '../db/seed';
-import { generateId, parseImportFile } from '../shared/utils';
+import { daemonCall } from './ipc-client';
 
 interface RawCommentItem {
   platform_comment_id?: string;
@@ -35,8 +32,6 @@ export function commentCommands(program: Command): void {
         console.log(pc.red('Error: --file is required'));
         process.exit(1);
       }
-      await runMigrations();
-      await seedAll();
 
       const fs = require('fs');
       if (!fs.existsSync(opts.file)) {
@@ -44,39 +39,8 @@ export function commentCommands(program: Command): void {
         process.exit(1);
       }
 
-      let items: unknown[];
-      try {
-        items = parseImportFile(opts.file);
-      } catch (err: unknown) {
-        console.log(pc.red(`Failed to parse import file: ${err instanceof Error ? err.message : String(err)}`));
-        process.exit(1);
-      }
-      let imported = 0;
-      let skipped = 0;
-      for (const itemRaw of items) {
-        try {
-          const item = itemRaw as RawCommentItem;
-          await createComment({
-            post_id: opts.postId,
-            platform_id: opts.platform,
-            platform_comment_id: item.platform_comment_id ?? item.id ?? null,
-            parent_comment_id: item.parent_comment_id ?? null,
-            root_comment_id: item.root_comment_id ?? null,
-            depth: Number(item.depth ?? 0),
-            author_id: item.author_id ?? null,
-            author_name: item.author_name ?? item.author ?? null,
-            content: item.content ?? '',
-            like_count: Number(item.like_count ?? 0),
-            reply_count: Number(item.reply_count ?? 0),
-            published_at: item.published_at ? new Date(item.published_at) : null,
-            metadata: item.metadata as Record<string, unknown> | null,
-          });
-          imported++;
-        } catch {
-          skipped++;
-        }
-      }
-      console.log(pc.green(`Imported: ${imported}, Skipped (duplicate): ${skipped}`));
+      const result = await daemonCall('comment.import', { platform: opts.platform, post_id: opts.postId, file: opts.file }) as { imported: number; skipped: number };
+      console.log(pc.green(`Imported: ${result.imported}, Skipped (duplicate): ${result.skipped}`));
     });
 
   comment
@@ -86,10 +50,9 @@ export function commentCommands(program: Command): void {
     .requiredOption('--post-id <id>', 'Post ID')
     .option('--limit <n>', 'Max results', '100')
     .action(async (opts: { postId: string; limit: string }) => {
-      await runMigrations();
-      await seedAll();
-      const comments = await listCommentsByPost(opts.postId, parseInt(opts.limit, 10));
-      const total = await countComments(opts.postId);
+      const result = await daemonCall('comment.list', { post_id: opts.postId, limit: parseInt(opts.limit, 10) }) as { comments: any[]; total: number };
+      const comments = result.comments ?? result;
+      const total = (result as any).total ?? comments.length;
       if (comments.length === 0) {
         console.log(pc.yellow('No comments found'));
         return;
