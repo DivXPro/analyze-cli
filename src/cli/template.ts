@@ -1,9 +1,6 @@
 import { Command } from 'commander';
 import * as pc from 'picocolors';
-import { listTemplates, getTemplateById, updateTemplate } from '../db/templates';
-import { runMigrations } from '../db/migrate';
-import { seedAll } from '../db/seed';
-import { generateId, now } from '../shared/utils';
+import { daemonCall } from './ipc-client';
 
 export function templateCommands(program: Command): void {
   const template = program.command('template').description('Prompt template management');
@@ -13,9 +10,7 @@ export function templateCommands(program: Command): void {
     .alias('ls')
     .description('List all prompt templates')
     .action(async () => {
-      await runMigrations();
-      await seedAll();
-      const templates = await listTemplates();
+      const templates = await daemonCall('template.list', {}) as any[];
       if (templates.length === 0) {
         console.log(pc.yellow('No templates found'));
         return;
@@ -39,23 +34,12 @@ export function templateCommands(program: Command): void {
     .option('--description <desc>', 'Template description')
     .option('--default', 'Set as default template')
     .action(async (opts: { name: string; template: string; description?: string; default?: boolean }) => {
-      await runMigrations();
-      await seedAll();
-
-      const id = generateId();
       try {
-        // If --default, unset other defaults first
-        if (opts.default) {
-          await updateTemplate(id, { is_default: false }); // will be set on insert
-        }
-        const { createTemplate } = require('../db/templates');
-        await createTemplate({
-          id,
+        await daemonCall('template.add', {
           name: opts.name,
           description: opts.description ?? null,
           template: opts.template,
           is_default: opts.default ?? false,
-          created_at: now(),
         });
         console.log(pc.green(`Template created: ${opts.name}`));
       } catch (err: unknown) {
@@ -72,11 +56,8 @@ export function templateCommands(program: Command): void {
     .option('--template <text>', 'New template content')
     .option('--description <desc>', 'New description')
     .action(async (opts: { id: string; name?: string; template?: string; description?: string }) => {
-      await runMigrations();
-      await seedAll();
-
-      const existing = await getTemplateById(opts.id);
-      if (!existing) {
+      const existing = await daemonCall('template.get', { id: opts.id }) as any;
+      if (!existing || !existing.id) {
         console.log(pc.red(`Template not found: ${opts.id}`));
         process.exit(1);
       }
@@ -91,7 +72,7 @@ export function templateCommands(program: Command): void {
         return;
       }
 
-      await updateTemplate(opts.id, updates);
+      await daemonCall('template.update', { id: opts.id, ...updates });
       console.log(pc.green(`Template updated: ${opts.id}`));
     });
 
@@ -101,11 +82,8 @@ export function templateCommands(program: Command): void {
     .requiredOption('--id <id>', 'Template ID')
     .option('--input <text>', 'Sample input text')
     .action(async (opts: { id: string; input?: string }) => {
-      await runMigrations();
-      await seedAll();
-
-      const tpl = await getTemplateById(opts.id);
-      if (!tpl) {
+      const tpl = await daemonCall('template.get', { id: opts.id }) as any;
+      if (!tpl || !tpl.id) {
         console.log(pc.red(`Template not found: ${opts.id}`));
         process.exit(1);
       }

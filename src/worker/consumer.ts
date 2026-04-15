@@ -1,8 +1,6 @@
-import { runMigrations } from '../db/migrate';
-import { seedAll } from '../db/seed';
 import { getNextJob, updateJobStatus } from '../db/queue-jobs';
 import { getTaskById, updateTaskStatus, updateTaskStats } from '../db/tasks';
-import { getTargetStats } from '../db/task-targets';
+import { getTargetStats, updateTargetStatus } from '../db/task-targets';
 import { getCommentById } from '../db/comments';
 import { getMediaFileById } from '../db/media-files';
 import { getPlatformById } from '../db/platforms';
@@ -16,10 +14,6 @@ import { sleep } from '../shared/utils';
 const POLL_INTERVAL_MS = 2000;
 
 export async function runConsumer(workerId: number): Promise<void> {
-  // Ensure DB is initialized in worker process
-  await runMigrations();
-  await seedAll();
-
   console.log(`[Worker-${workerId}] Consumer started, polling every ${POLL_INTERVAL_MS}ms`);
 
   while (true) {
@@ -35,12 +29,18 @@ export async function runConsumer(workerId: number): Promise<void> {
       try {
         await processJob(job);
         await updateJobStatus(job.id, 'completed');
+        if (job.target_type && job.target_id) {
+          await updateTargetStatus(job.task_id, job.target_type, job.target_id, 'done');
+        }
         await updateTaskStatsForTask(job.task_id);
         console.log(`[Worker-${workerId}] Job ${job.id} completed`);
       } catch (err) {
         const error = String(err);
         console.error(`[Worker-${workerId}] Job ${job.id} failed:`, error);
         await updateJobStatus(job.id, 'failed');
+        if (job.target_type && job.target_id) {
+          await updateTargetStatus(job.task_id, job.target_type, job.target_id, 'failed', error);
+        }
       }
     } catch (err) {
       console.error(`[Worker-${workerId}] Error in consumer loop:`, err);

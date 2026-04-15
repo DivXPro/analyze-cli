@@ -1,9 +1,6 @@
 import { Command } from 'commander';
 import * as pc from 'picocolors';
-import { listPlatforms } from '../db/platforms';
-import { listFieldMappings } from '../db/field-mappings';
-import { runMigrations } from '../db/migrate';
-import { seedAll } from '../db/seed';
+import { daemonCall } from './ipc-client';
 
 export function platformCommands(program: Command): void {
   const platform = program.command('platform').description('Platform management');
@@ -13,9 +10,7 @@ export function platformCommands(program: Command): void {
     .alias('ls')
     .description('List all registered platforms')
     .action(async () => {
-      await runMigrations();
-      await seedAll();
-      const platforms = await listPlatforms();
+      const platforms = await daemonCall('platform.list', {}) as any[];
       if (platforms.length === 0) {
         console.log(pc.yellow('No platforms registered. Run daemon first.'));
         return;
@@ -38,9 +33,10 @@ export function platformCommands(program: Command): void {
     .requiredOption('--platform <id>', 'Platform ID')
     .option('--entity <type>', 'Entity type (post/comment)')
     .action(async (opts: { platform: string; entity?: string }) => {
-      await runMigrations();
-      await seedAll();
-      const mappings = await listFieldMappings(opts.platform, opts.entity as 'post' | 'comment' | undefined);
+      const mappings = await daemonCall('platform.mapping.list', {
+        platform: opts.platform,
+        entity: opts.entity,
+      }) as any[];
       if (mappings.length === 0) {
         console.log(pc.yellow(`No mappings found for platform: ${opts.platform}`));
         return;

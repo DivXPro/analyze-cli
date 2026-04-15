@@ -1,9 +1,6 @@
 import { Command } from 'commander';
 import * as pc from 'picocolors';
-import { createPost, listPosts, searchPosts, countPosts } from '../db/posts';
-import { runMigrations } from '../db/migrate';
-import { seedAll } from '../db/seed';
-import { generateId, now } from '../shared/utils';
+import { daemonCall } from './ipc-client';
 
 interface RawPostItem {
   platform_post_id?: string;
@@ -46,50 +43,13 @@ export function postCommands(program: Command): void {
         console.log(pc.red('Error: --file is required'));
         process.exit(1);
       }
-      // Initialize DB for direct file access
-      await runMigrations();
-      await seedAll();
-
       const fs = require('fs');
       if (!fs.existsSync(opts.file)) {
         console.log(pc.red(`File not found: ${opts.file}`));
         process.exit(1);
       }
-      const content = fs.readFileSync(opts.file, 'utf-8');
-      const lines = content.split('\n').filter((l: string) => l.trim());
-      let imported = 0;
-      let skipped = 0;
-      for (const line of lines) {
-        try {
-          const item: RawPostItem = JSON.parse(line);
-          await createPost({
-            platform_id: opts.platform,
-            platform_post_id: item.platform_post_id ?? item.noteId ?? item.id ?? generateId(),
-            title: item.title ?? null,
-            content: item.content ?? item.text ?? item.desc ?? '',
-            author_id: item.author_id ?? null,
-            author_name: item.author_name ?? item.author ?? null,
-            author_url: item.author_url ?? null,
-            url: item.url ?? null,
-            cover_url: item.cover_url ?? null,
-            post_type: (item.post_type ?? item.type ?? null) as 'text' | 'image' | 'video' | 'audio' | 'article' | 'carousel' | 'mixed' | null,
-            like_count: Number(item.like_count ?? 0),
-            collect_count: Number(item.collect_count ?? 0),
-            comment_count: Number(item.comment_count ?? 0),
-            share_count: Number(item.share_count ?? 0),
-            play_count: Number(item.play_count ?? 0),
-            score: item.score ? Number(item.score) : null,
-            tags: item.tags as { name: string; url?: string }[] | null,
-            media_files: (item.media_files as { type: 'image' | 'video' | 'audio'; url: string }[] | null) ?? null,
-            published_at: item.published_at ? new Date(item.published_at) : null,
-            metadata: item.metadata as Record<string, unknown> | null,
-          });
-          imported++;
-        } catch {
-          skipped++;
-        }
-      }
-      console.log(pc.green(`Imported: ${imported}, Skipped (duplicate): ${skipped}`));
+      const result = await daemonCall('post.import', { platform: opts.platform, file: opts.file }) as { imported: number };
+      console.log(pc.green(`Imported: ${result.imported}`));
     });
 
   post
@@ -100,10 +60,13 @@ export function postCommands(program: Command): void {
     .option('--limit <n>', 'Max results', '50')
     .option('--offset <n>', 'Offset', '0')
     .action(async (opts: { platform?: string; limit: string; offset: string }) => {
-      await runMigrations();
-      await seedAll();
-      const posts = await listPosts(opts.platform, parseInt(opts.limit, 10), parseInt(opts.offset, 10));
-      const total = await countPosts(opts.platform);
+      const result = await daemonCall('post.list', {
+        platform: opts.platform,
+        limit: parseInt(opts.limit, 10),
+        offset: parseInt(opts.offset, 10),
+      }) as { posts: any[]; total: number };
+      const posts = result.posts ?? result;
+      const total = (result as any).total ?? posts.length;
       if (posts.length === 0) {
         console.log(pc.yellow('No posts found'));
         return;
@@ -126,9 +89,11 @@ export function postCommands(program: Command): void {
     .requiredOption('--query <text>', 'Search query')
     .option('--limit <n>', 'Max results', '50')
     .action(async (opts: { platform: string; query: string; limit: string }) => {
-      await runMigrations();
-      await seedAll();
-      const posts = await searchPosts(opts.platform, opts.query, parseInt(opts.limit, 10));
+      const posts = await daemonCall('post.search', {
+        platform: opts.platform,
+        query: opts.query,
+        limit: parseInt(opts.limit, 10),
+      }) as any[];
       if (posts.length === 0) {
         console.log(pc.yellow('No posts found'));
         return;
