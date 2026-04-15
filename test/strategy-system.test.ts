@@ -18,6 +18,8 @@ import * as tasksMod from '../dist/db/tasks.js';
 const { createTask } = tasksMod;
 import * as anthropic from '../dist/worker/anthropic.js';
 const { buildStrategyPrompt } = anthropic;
+import * as queueJobs from '../dist/db/queue-jobs.js';
+const { syncWaitingMediaJobs } = queueJobs;
 import type { StrategyOutputSchema } from '../dist/shared/types.js';
 
 describe('strategy system', { timeout: 15000 }, () => {
@@ -26,8 +28,11 @@ describe('strategy system', { timeout: 15000 }, () => {
     await runMigrations();
     await query("DELETE FROM analysis_results WHERE task_id = 'test-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
+    await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
+    await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
     await query("DELETE FROM tasks WHERE id = 'test-task'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
+    await query("DELETE FROM platforms WHERE name = 'Test Platform'");
   });
 
   it('should have strategies table', async () => {
@@ -257,10 +262,21 @@ describe('strategy system', { timeout: 15000 }, () => {
     assert.ok(prompt.includes('Alice'));
   });
 
+  it('should sync waiting_media jobs to pending', async () => {
+    await query("INSERT INTO queue_jobs (id, task_id, target_id, status) VALUES ('sync-job-1', 'test-task', 'post-sync', 'waiting_media')");
+    const count = await syncWaitingMediaJobs('test-task', 'post-sync');
+    assert.equal(count, 1);
+    const rows = await query<{ status: string }>("SELECT status FROM queue_jobs WHERE id = 'sync-job-1'");
+    assert.equal(rows[0].status, 'pending');
+  });
+
   after(async () => {
     await query("DELETE FROM analysis_results WHERE task_id = 'test-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
+    await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
+    await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
     await query("DELETE FROM tasks WHERE id = 'test-task'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
+    await query("DELETE FROM platforms WHERE name = 'Test Platform'");
   });
 });

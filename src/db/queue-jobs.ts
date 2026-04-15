@@ -4,9 +4,9 @@ import { now } from '../shared/utils';
 
 export async function enqueueJob(job: QueueJob): Promise<void> {
   await run(
-    `INSERT INTO queue_jobs (id, task_id, target_type, target_id, status, priority, attempts, max_attempts, error, created_at, processed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [job.id, job.task_id, job.target_type, job.target_id, job.status, job.priority, job.attempts, job.max_attempts, job.error, job.created_at, job.processed_at]
+    `INSERT INTO queue_jobs (id, task_id, strategy_id, target_type, target_id, status, priority, attempts, max_attempts, error, created_at, processed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [job.id, job.task_id, job.strategy_id, job.target_type, job.target_id, job.status, job.priority, job.attempts, job.max_attempts, job.error, job.created_at, job.processed_at]
   );
 }
 
