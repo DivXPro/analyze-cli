@@ -13,7 +13,7 @@ import { enqueueJobs, getQueueStats, syncWaitingMediaJobs } from '../db/queue-jo
 import { getDbPath, query } from '../db/client';
 import { generateId, now, parseImportFile } from '../shared/utils';
 import { fetchViaOpencli } from '../data-fetcher/opencli';
-import { createStrategy, getStrategyById, listStrategies, validateStrategyJson, updateStrategy } from '../db/strategies';
+import { createStrategy, getStrategyById, listStrategies, validateStrategyJson, updateStrategy, parseJsonSchemaToColumns, createStrategyResultTable, syncStrategyResultTable } from '../db/strategies';
 import { getExistingResultIds } from '../db/analysis-results';
 import { getTaskPostStatus } from '../db/task-post-status';
 import type { QueueJob } from '../shared/types';
@@ -442,20 +442,51 @@ export function getHandlers(): Record<string, Handler> {
       return { success: true };
     },
 
-    async 'result.list'(params) {
-      throw new Error('Legacy result.list not implemented; use strategy-specific result queries');
+    async 'strategy.result.list'(params) {
+      if (typeof params.task_id !== 'string') throw new Error('task_id is required');
+      if (typeof params.strategy_id !== 'string') throw new Error('strategy_id is required');
+      const { listStrategyResultsByTask } = await import('../db/analysis-results');
+      return listStrategyResultsByTask(params.strategy_id as string, params.task_id as string, Number(params.limit ?? 100));
     },
 
-    async 'result.show'(params) {
-      throw new Error('Legacy result.show not implemented; use strategy-specific result queries');
+    async 'strategy.result.stats'(params) {
+      if (typeof params.task_id !== 'string') throw new Error('task_id is required');
+      if (typeof params.strategy_id !== 'string') throw new Error('strategy_id is required');
+      const { getStrategyResultStats } = await import('../db/analysis-results');
+      return getStrategyResultStats(params.strategy_id as string, params.task_id as string);
     },
 
-    async 'result.stats'(params) {
-      throw new Error('Legacy result.stats not implemented; use strategy-specific stats queries');
-    },
+    async 'strategy.result.export'(params) {
+      if (typeof params.task_id !== 'string') throw new Error('task_id is required');
+      if (typeof params.strategy_id !== 'string') throw new Error('strategy_id is required');
+      const { listStrategyResultsByTask } = await import('../db/analysis-results');
+      const results = await listStrategyResultsByTask(params.strategy_id as string, params.task_id as string, 100000);
+      const format = (params.format ?? 'json') as 'csv' | 'json';
+      const allResults = results.map(r => {
+        const rec = r as Record<string, unknown>;
+        const flat: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(rec)) {
+          if (typeof value === 'object' && value !== null) {
+            flat[key] = JSON.stringify(value);
+          } else {
+            flat[key] = value;
+          }
+        }
+        return flat;
+      });
 
-    async 'result.export'(params) {
-      throw new Error('Legacy result.export not implemented; use strategy-specific export');
+      let content: string;
+      if (format === 'csv') {
+        content = exportToCsv(allResults);
+      } else {
+        content = allResults.map(r => JSON.stringify(r)).join('\n') + '\n';
+      }
+
+      const outputPath = params.output as string | undefined;
+      if (outputPath) {
+        fs.writeFileSync(outputPath, content);
+      }
+      return { content, writtenTo: outputPath ?? null, count: allResults.length };
     },
 
     async 'result.media'(params) {
@@ -526,6 +557,11 @@ export function getHandlers(): Record<string, Handler> {
         return { imported: false, reason: 'same version already exists' };
       }
 
+      const outputSchema = obj.output_schema as Record<string, unknown>;
+      const columnDefs = parseJsonSchemaToColumns(outputSchema);
+      await createStrategyResultTable(obj.id as string, columnDefs);
+      await syncStrategyResultTable(obj.id as string, columnDefs);
+
       const strategy = {
         id: obj.id as string,
         name: obj.name as string,
@@ -571,7 +607,7 @@ export function getHandlers(): Record<string, Handler> {
       if (targets.length === 0) throw new Error('No matching targets for this strategy');
 
       const targetIds = targets.map(t => t.target_id);
-      const existingIds = new Set(await getExistingResultIds(strategyId, taskId, strategy.target, targetIds));
+      const existingIds = new Set(await getExistingResultIds(taskId, strategyId, strategy.target, targetIds));
       const newTargets = targets.filter(t => !existingIds.has(t.target_id));
 
       const jobs: QueueJob[] = [];

@@ -395,6 +395,18 @@ describe('strategy system', { timeout: 15000 }, () => {
     assert.equal(rows[0].level, 'high');
   });
 
+  it('should list strategy results via daemon', async () => {
+    const handlers = getHandlers();
+    const rows = await handlers['strategy.result.list']({ task_id: 'task-1', strategy_id: 'test_schema_1' }) as any[];
+    assert.ok(Array.isArray(rows));
+  });
+
+  it('should get strategy result stats via daemon', async () => {
+    const handlers = getHandlers();
+    const stats = await handlers['strategy.result.stats']({ task_id: 'task-1', strategy_id: 'test_schema_1' }) as any;
+    assert.equal(typeof stats.total, 'number');
+  });
+
   after(async () => {
     await query("DELETE FROM analysis_results_strategy_test_schema_1 WHERE task_id = 'task-1'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");

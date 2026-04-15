@@ -160,7 +160,7 @@ export async function createStrategyResultTable(
   validateColumnDefs(columnDefs);
   const tableName = getStrategyResultTableName(strategyId);
   const dynamicCols = columnDefs.map(c => `  ${c.name} ${c.sqlType}`).join(',\n');
-  const sql = `CREATE TABLE IF NOT EXISTS ${tableName} (
+  const sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
     target_type TEXT NOT NULL,
@@ -175,10 +175,10 @@ ${dynamicCols ? dynamicCols + ',\n' : ''}    raw_response JSON,
   await run(sql);
 
   // Auto-indexes
-  await run(`CREATE INDEX IF NOT EXISTS idx_${strategyId}_task ON ${tableName}(task_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS "idx_${strategyId}_task" ON "${tableName}"(task_id)`);
   for (const col of columnDefs) {
     if (col.indexable) {
-      await run(`CREATE INDEX IF NOT EXISTS idx_${strategyId}_${col.name} ON ${tableName}(${col.name})`);
+      await run(`CREATE INDEX IF NOT EXISTS "idx_${strategyId}_${col.name}" ON "${tableName}"(${col.name})`);
     }
   }
 }
@@ -196,9 +196,9 @@ export async function syncStrategyResultTable(
   const existingMap = new Map(existing.map(c => [c.column_name, c.data_type]));
   for (const col of columnDefs) {
     if (!existingMap.has(col.name)) {
-      await run(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${col.sqlType}`);
+      await run(`ALTER TABLE "${tableName}" ADD COLUMN ${col.name} ${col.sqlType}`);
       if (col.indexable) {
-        await run(`CREATE INDEX IF NOT EXISTS idx_${strategyId}_${col.name} ON ${tableName}(${col.name})`);
+        await run(`CREATE INDEX IF NOT EXISTS "idx_${strategyId}_${col.name}" ON "${tableName}"(${col.name})`);
       }
     } else if (normalizeSqlType(existingMap.get(col.name) ?? '') !== col.sqlType) {
       throw new Error(`Column ${col.name} exists with different type. DuckDB does not support ALTER COLUMN type changes. Please create a new strategy version.`);
