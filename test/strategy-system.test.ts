@@ -10,6 +10,7 @@ import * as analysisResults from '../dist/db/analysis-results.js';
 const { createAnalysisResult, getExistingResultIds, listAnalysisResultsByTask } = analysisResults;
 import * as parser from '../dist/worker/parser.js';
 const { parseStrategyResult } = parser;
+import type { StrategyOutputSchema } from '../dist/shared/types.js';
 
 describe('strategy system', { timeout: 15000 }, () => {
   before(async () => {
@@ -132,7 +133,7 @@ describe('strategy system', { timeout: 15000 }, () => {
   });
 
   it('should parse strategy result dynamically', async () => {
-    const schema = {
+    const schema: StrategyOutputSchema = {
       columns: [
         { name: 'score', type: 'number', label: 'Score' },
         { name: 'level', type: 'enum', label: 'Level', enum_values: ['low', 'medium', 'high'] },
@@ -143,7 +144,7 @@ describe('strategy system', { timeout: 15000 }, () => {
       ],
     };
     const raw = JSON.stringify({ score: 4.5, level: 'medium', tags: ['a', 'b'], summary: 'ok' });
-    const result = parseStrategyResult(raw, schema as any);
+    const result = parseStrategyResult(raw, schema);
     assert.equal(result.columns.score, 4.5);
     assert.equal(result.columns.level, 'medium');
     assert.deepEqual(result.json_fields.tags, ['a', 'b']);
@@ -151,13 +152,58 @@ describe('strategy system', { timeout: 15000 }, () => {
   });
 
   it('should handle missing fields with defaults', async () => {
-    const schema = {
+    const schema: StrategyOutputSchema = {
       columns: [{ name: 'score', type: 'number', label: 'Score' }],
       json_fields: [{ name: 'tags', type: 'array', label: 'Tags' }],
     };
-    const result = parseStrategyResult('{}', schema as any);
+    const result = parseStrategyResult('{}', schema);
     assert.equal(result.columns.score, null);
     assert.deepEqual(result.json_fields.tags, []);
+  });
+
+  it('should handle invalid JSON gracefully', async () => {
+    const schema: StrategyOutputSchema = {
+      columns: [
+        { name: 'score', type: 'number', label: 'Score' },
+        { name: 'level', type: 'enum', label: 'Level', enum_values: ['low', 'medium', 'high'] },
+      ],
+      json_fields: [
+        { name: 'tags', type: 'array', label: 'Tags' },
+        { name: 'summary', type: 'string', label: 'Summary' },
+      ],
+    };
+    const result = parseStrategyResult('not json', schema);
+    assert.equal(result.columns.score, null);
+    assert.equal(result.columns.level, null);
+    assert.deepEqual(result.json_fields.tags, []);
+    assert.equal(result.json_fields.summary, null);
+  });
+
+  it('should return null for malformed number', async () => {
+    const schema: StrategyOutputSchema = {
+      columns: [{ name: 'score', type: 'number', label: 'Score' }],
+      json_fields: [],
+    };
+    const result = parseStrategyResult(JSON.stringify({ score: 'n/a' }), schema);
+    assert.equal(result.columns.score, null);
+  });
+
+  it('should return null for mismatched enum', async () => {
+    const schema: StrategyOutputSchema = {
+      columns: [{ name: 'level', type: 'enum', label: 'Level', enum_values: ['low', 'medium', 'high'] }],
+      json_fields: [],
+    };
+    const result = parseStrategyResult(JSON.stringify({ level: 'critical' }), schema);
+    assert.equal(result.columns.level, null);
+  });
+
+  it('should wrap scalar into array when array type expected', async () => {
+    const schema: StrategyOutputSchema = {
+      columns: [],
+      json_fields: [{ name: 'tags', type: 'array', label: 'Tags' }],
+    };
+    const result = parseStrategyResult(JSON.stringify({ tags: 'a' }), schema);
+    assert.deepEqual(result.json_fields.tags, ['a']);
   });
 
   after(async () => {

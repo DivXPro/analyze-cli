@@ -198,8 +198,11 @@ function normalizeFieldValue(value: unknown, def: StrategyColumnDef | StrategyJs
     }
     case 'enum': {
       const str = String(value).toLowerCase();
-      if (def.enum_values?.includes(str)) return str;
-      if (def.enum_values?.includes(String(value))) return String(value);
+      if (def.enum_values && def.enum_values.length > 0) {
+        const lowerValues = def.enum_values.map(v => v.toLowerCase());
+        const idx = lowerValues.indexOf(str);
+        if (idx !== -1) return lowerValues[idx];
+      }
       return null;
     }
     case 'array': {
