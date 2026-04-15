@@ -170,8 +170,62 @@ async function main() {
   await ensureDaemonStarted();
   console.log('[record] Daemon ready');
 
-  // TODO: will be replaced in next tasks
-  console.log('[record] Skeleton complete');
+  // --- Search posts ---
+  console.log(`[record] Searching posts: "${opts.query}"`);
+  const searchResult = await runOpencli(opts.searchTemplate, { query: opts.query, limit: opts.limit });
+  if (!searchResult.success) {
+    throw new Error(`Search failed: ${searchResult.error}`);
+  }
+  const postsRaw = searchResult.data ?? [];
+  console.log(`[record] Found ${postsRaw.length} posts`);
+
+  const postsRawFile = path.join(opts.outputDir, 'posts_raw.json');
+  fs.writeFileSync(postsRawFile, JSON.stringify(postsRaw, null, 2));
+
+  // Transform to import-compatible JSONL
+  const postsForImport = postsRaw.map((item: any, idx: number) => ({
+    ...item,
+    platform_post_id: item[opts.noteIdField] ?? item.id ?? item.noteId ?? `post_${idx}`,
+  }));
+  const postsJsonlFile = path.join(opts.outputDir, 'posts_transformed.jsonl');
+  fs.writeFileSync(postsJsonlFile, postsForImport.map(p => JSON.stringify(p)).join('\n') + '\n');
+
+  // --- Create platform via CLI (if not already exists) ---
+  const listPlatResult = await runAnalyzeCli(['platform', 'list']);
+  const platformExists = listPlatResult.success && listPlatResult.stdout.includes(opts.platform);
+  if (!platformExists) {
+    console.log(`[record] Creating platform: ${opts.platform}`);
+    const platResult = await runAnalyzeCli([
+      'platform', 'add',
+      '--id', opts.platform,
+      '--name', opts.platformName,
+      '--description', `Recorded from query: ${opts.query}`,
+    ]);
+    if (!platResult.success) {
+      console.warn(`[record] Platform add warning: ${platResult.error ?? platResult.stderr}`);
+    }
+  } else {
+    console.log(`[record] Platform ${opts.platform} already exists, skipping creation`);
+  }
+
+  // --- Import posts via CLI ---
+  console.log(`[record] Importing posts via CLI...`);
+  const importResult = await runAnalyzeCli([
+    'post', 'import',
+    '--platform', opts.platform,
+    '--file', postsJsonlFile,
+  ]);
+  if (!importResult.success) {
+    throw new Error(`Post import failed: ${importResult.error}`);
+  }
+  console.log(`[record] Post import stdout: ${importResult.stdout.trim()}`);
+
+  // --- Retrieve imported posts via CLI ---
+  const listResult = await runAnalyzeCli(['post', 'list', '--platform', opts.platform, '--limit', String(opts.limit)]);
+  if (!listResult.success) {
+    throw new Error(`Post list failed: ${listResult.error}`);
+  }
+  console.log(`[record] Post list stdout: ${listResult.stdout.trim()}`);
 }
 
 main().catch(err => {
