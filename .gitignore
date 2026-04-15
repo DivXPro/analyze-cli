@@ -20,3 +20,4 @@ test-data/reports/
 
 # Downloads (media files by platform)
 downloads/
+.worktrees/
