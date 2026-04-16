@@ -48,7 +48,8 @@ Import posts from a JSON/JSONL file and optionally bind them to a task.
 - Command: `analyze-cli post import --platform {id} --file {path} [--task-id {task_id}]`
 - When to use: after search results have been saved to a file.
 - Duplicate posts (same platform_id + platform_post_id) are updated, not skipped.
-- **Format compatibility**: `post.import` now automatically handles `opencli xiaohongshu note` output when it is returned as a `[{field, value}, ...]` array. It converts the array into a single post object and maps common fields (`likes`→`like_count`, `collects`→`collect_count`, `comments`→`comment_count`) automatically. You can save the raw `note` output directly to a `.json` file and import it without manual transformation.
+- **DO NOT manually fetch note details before import**: Do not run `opencli xiaohongshu note` for each post and do not write ad-hoc scripts to "enrich" data before importing. The data-preparation stage (`analyze-cli task prepare-data`) is responsible for fetching full post content via the `fetch_note` template.
+- **Format compatibility** (edge case): `post.import` can handle raw `opencli xiaohongshu note` output if you already have it, but this is not the standard workflow. Standard workflow: import search summaries directly, then let `prepare-data` enrich them.
 
 ### 4. create_task
 Create an analysis task.
@@ -285,7 +286,7 @@ The generated strategy must satisfy the project's `validateStrategyJson` and dat
 
 1. If the user asks to "analyze" platform content, start with `opencli xiaohongshu search` -> `analyze-cli platform list` -> `analyze-cli platform add` (if not found) -> `analyze-cli task create` -> `analyze-cli post import` (with `--task-id`).
    - **Always check if the platform exists first** using `analyze-cli platform list`. If the platform is already registered, skip `platform add`. This avoids "already exists" errors mid-workflow.
-   - **Note**: `opencli xiaohongshu search` returns summary data (title, likes, URL). If the strategy needs full post content (`{{content}}`), you may need to enrich the data first using `opencli xiaohongshu note {url} -f json` before `post import`.
+   - **Important workflow rule**: `opencli xiaohongshu search` returns summary data (title, likes, URL). **Do NOT manually fetch full post details with `opencli xiaohongshu note` before `post import`, and do NOT write scripts to do so.** Instead, ensure `task create` includes a `fetch_note` template; the daemon will automatically enrich posts during `analyze-cli task prepare-data`. This is the only supported way to get `{{content}}` populated for analysis.
 2. Then `analyze-cli task step add` for each strategy they need.
 3. Run `analyze-cli task prepare-data` to fetch comments and media via the opencli templates defined in `task create`.
 4. Run `analyze-cli task run-all-steps` to start the analysis pipeline.
