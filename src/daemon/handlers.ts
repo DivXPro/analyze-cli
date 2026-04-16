@@ -718,15 +718,24 @@ export function getHandlers(): Record<string, Handler> {
     },
 
     async 'strategy.import'(params) {
-      if (typeof params.file !== 'string') throw new Error('file is required and must be a string');
-      const filePath = params.file as string;
-      if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
-      const content = fs.readFileSync(filePath, 'utf-8');
       let data: unknown;
-      try {
-        data = JSON.parse(content);
-      } catch {
-        throw new Error('Invalid JSON file');
+      if (typeof params.json === 'string') {
+        try {
+          data = JSON.parse(params.json as string);
+        } catch {
+          throw new Error('Invalid JSON string');
+        }
+      } else if (typeof params.file === 'string') {
+        const filePath = params.file as string;
+        if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        try {
+          data = JSON.parse(content);
+        } catch {
+          throw new Error('Invalid JSON file');
+        }
+      } else {
+        throw new Error('Either file or json is required');
       }
       const validation = validateStrategyJson(data);
       if (!validation.valid) throw new Error(validation.error);
@@ -751,7 +760,7 @@ export function getHandlers(): Record<string, Handler> {
         needs_media: (obj.needs_media ?? { enabled: false }) as any,
         prompt: obj.prompt as string,
         output_schema: obj.output_schema as any,
-        file_path: filePath,
+        file_path: (typeof params.file === 'string' ? params.file : null) as string | null,
       };
 
       if (existing) {
