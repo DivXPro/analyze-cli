@@ -83,6 +83,20 @@ export function strategyCommands(program: Command): void {
       }
     });
 
+  strategy
+    .command('delete')
+    .description('Delete a strategy by ID')
+    .requiredOption('--id <id>', 'Strategy ID')
+    .action(async (opts: { id: string }) => {
+      try {
+        await daemonCall('strategy.delete', { id: opts.id });
+        console.log(pc.green(`Strategy deleted: ${opts.id}`));
+      } catch (err: unknown) {
+        console.log(pc.red(`Error: ${(err as Error).message}`));
+        process.exit(1);
+      }
+    });
+
   const result = strategy.command('result').description('Query strategy analysis results');
 
   result

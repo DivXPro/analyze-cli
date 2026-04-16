@@ -13,7 +13,7 @@ import { enqueueJobs, getQueueStats, syncWaitingMediaJobs } from '../db/queue-jo
 import { getDbPath, query, run } from '../db/client';
 import { generateId, now, parseImportFile } from '../shared/utils';
 import { fetchViaOpencli } from '../data-fetcher/opencli';
-import { createStrategy, getStrategyById, listStrategies, validateStrategyJson, updateStrategy, parseJsonSchemaToColumns, createStrategyResultTable, syncStrategyResultTable } from '../db/strategies';
+import { createStrategy, getStrategyById, listStrategies, validateStrategyJson, updateStrategy, deleteStrategy, parseJsonSchemaToColumns, createStrategyResultTable, syncStrategyResultTable } from '../db/strategies';
 import { getExistingResultIds } from '../db/analysis-results';
 import { getTaskPostStatus } from '../db/task-post-status';
 import { config } from '../config';
@@ -834,6 +834,14 @@ export function getHandlers(): Record<string, Handler> {
       const strategy = await getStrategyById(params.id as string);
       if (!strategy) throw new Error(`Strategy not found: ${params.id}`);
       return strategy;
+    },
+
+    async 'strategy.delete'(params) {
+      if (typeof params.id !== 'string') throw new Error('id is required and must be a string');
+      const strategy = await getStrategyById(params.id as string);
+      if (!strategy) throw new Error(`Strategy not found: ${params.id}`);
+      await deleteStrategy(params.id as string);
+      return { deleted: true };
     },
 
     async 'analyze.run'(params) {
