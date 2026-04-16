@@ -264,6 +264,24 @@ export function taskCommands(program: Command): void {
       }
     });
 
+  stepCmd
+    .command('reset')
+    .description('Reset a failed or running task step back to pending')
+    .requiredOption('--task-id <id>', 'Task ID')
+    .requiredOption('--step-id <id>', 'Step ID')
+    .action(async (opts: { taskId: string; stepId: string }) => {
+      try {
+        const result = await daemonCall('task.step.reset', {
+          task_id: opts.taskId,
+          step_id: opts.stepId,
+        }) as { reset: boolean };
+        console.log(pc.green(`Step reset: ${result.reset}`));
+      } catch (err: unknown) {
+        console.log(pc.red(`Error: ${(err as Error).message}`));
+        process.exit(1);
+      }
+    });
+
   task
     .command('run-all-steps')
     .description('Run all pending/failed steps for a task in order')

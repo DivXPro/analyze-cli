@@ -3,7 +3,7 @@ import { getHandlers } from './handlers';
 import { runConsumer } from '../worker/consumer';
 import { runMigrations } from '../db/migrate';
 import { seedAll } from '../db/seed';
-import { close } from '../db/client';
+import { close, query, checkpoint } from '../db/client';
 import { IPC_SOCKET_PATH, DEFAULT_WORKERS } from '../shared/constants';
 import { config } from '../config';
 import * as fs from 'fs';
@@ -22,6 +22,14 @@ export class Daemon {
 
   async start(): Promise<void> {
     await runMigrations();
+
+    try {
+      await query('SELECT 1');
+    } catch (err: unknown) {
+      console.error('[Daemon] Database health check failed:', err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+
     await seedAll();
     await this.ipcServer.start();
 
@@ -36,8 +44,13 @@ export class Daemon {
     console.log('[Daemon] Started on', IPC_SOCKET_PATH);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.ipcServer.stop();
+    try {
+      await checkpoint();
+    } catch (err: unknown) {
+      console.error('[Daemon] CHECKPOINT failed:', err instanceof Error ? err.message : String(err));
+    }
     close();
     removePid();
     console.log('[Daemon] Stopped');
@@ -66,6 +79,12 @@ function removePid(): void {
 if (require.main === module) {
   const daemon = new Daemon();
   daemon.start().catch(console.error);
-  process.on('SIGINT', () => daemon.stop());
-  process.on('SIGTERM', () => daemon.stop());
+  process.on('SIGINT', async () => {
+    await daemon.stop();
+    process.exit(0);
+  });
+  process.on('SIGTERM', async () => {
+    await daemon.stop();
+    process.exit(0);
+  });
 }

@@ -19,6 +19,7 @@ Before executing any analyze-cli workflow, perform the following checks in order
 2. **Ensure daemon is running**
    - Run `analyze-cli daemon status`.
    - If the daemon is not running, start it with `analyze-cli daemon start` and wait a few seconds.
+   - The daemon performs a database health check on startup. If it logs a health-check failure and exits, do not attempt to delete or modify the database file. Instead, ensure no other process is holding the database lock, then restart the daemon.
 
 3. **Read opencli skill before using opencli**
    - Before running any `opencli` command (e.g., `opencli xiaohongshu search`), first read the opencli skill documentation to confirm command syntax and available adapters.
@@ -47,6 +48,7 @@ Import posts from a JSON/JSONL file and optionally bind them to a task.
 - Command: `analyze-cli post import --platform {id} --file {path} [--task-id {task_id}]`
 - When to use: after search results have been saved to a file.
 - Duplicate posts (same platform_id + platform_post_id) are updated, not skipped.
+- **Format compatibility**: `post.import` now automatically handles `opencli xiaohongshu note` output when it is returned as a `[{field, value}, ...]` array. It converts the array into a single post object and maps common fields (`likes`→`like_count`, `collects`→`collect_count`, `comments`→`comment_count`) automatically. You can save the raw `note` output directly to a `.json` file and import it without manual transformation.
 
 ### 4. create_task
 Create an analysis task.
@@ -57,10 +59,11 @@ Create an analysis task.
   analyze-cli task create --name "XHS Analysis" \
     --cli-templates '{
       "fetch_comments": "opencli xiaohongshu comments {note_id} --limit 100 --with-replies false -f json",
-      "fetch_media": "opencli xiaohongshu download {note_id} --output downloads/xhs -f json"
+      "fetch_media": "opencli xiaohongshu download {note_id} --output {download_dir}/xhs -f json"
     }'
   ```
   - `{note_id}` will be substituted with the post URL (from `posts.url` or `metadata.note_id`).
+  - `{download_dir}` will be substituted with the project's download directory (`tmp/downloads` under the project root by default). Always use `{download_dir}` in `--output` paths instead of hard-coded paths, so that downloaded files are stored in a predictable project-local location regardless of the working directory.
 
 ### 5. add_step_to_task
 Add a strategy-based analysis step to a task.
@@ -94,7 +97,23 @@ Show analysis results for a completed task.
 - Command: `analyze-cli task results --task-id {task_id}`
 - When to use: after the task status shows `completed`.
 
-### 11. create_strategy
+### 11. reset_task_step
+Reset a failed or running task step back to pending, and retry its failed strategy queue jobs.
+- Command: `analyze-cli task step reset --task-id {task_id} --step-id {step_id}`
+- When to use: a strategy analysis step failed (e.g., due to API rate limits) and the user wants to retry it safely without touching the database directly.
+
+### 12. retry_failed_queue_jobs
+Retry all failed queue jobs (optionally limited to a specific task).
+- Command: `analyze-cli queue retry [--task-id {task_id}]`
+- When to use: after analysis jobs failed and the user wants to re-run only the failed ones.
+
+### 13. reset_queue_jobs
+Reset all non-pending queue jobs to pending (optionally limited to a specific task).
+- Command: `analyze-cli queue reset [--task-id {task_id}]`
+- When to use: you need to forcefully restart a batch of jobs that are stuck in `processing`, `failed`, or `completed`.
+- **Warning**: this is a blunt instrument; prefer `queue retry` for normal recovery.
+
+### 14. create_strategy
 Create a new analysis strategy via natural language conversation.
 - When to use: the user asks to create/generate/build a new strategy (套路/分析维度/分析模板).
 - Workflow:
@@ -120,6 +139,17 @@ The generated strategy must satisfy the project's `validateStrategyJson` and dat
 - `target`: `"post"` (only post is currently supported)
 - `needs_media`: object with `enabled: true/false`. If `true`, include `media_types`, `max_media`, `mode`.
 - `prompt`: must include `{{content}}`. If `needs_media.enabled` is `true`, also include `{{media_urls}}`. Do not use Handlebars conditionals/loops.
+
+**Supported prompt variables (whitelist):**
+- `{{content}}` — post content (required)
+- `{{title}}` — post title
+- `{{author_name}}` — author name
+- `{{platform}}` — platform name
+- `{{published_at}}` — publish time
+- `{{tags}}` — tags JSON string
+- `{{media_urls}}` — media file paths (required when `needs_media.enabled=true`)
+
+> Do NOT use other variables such as `{{likes}}`, `{{collects}}`, `{{comments}}`, `{{shares}}`, etc. They are not substituted at runtime.
 - `output_schema`: standard JSON Schema with `type: "object"` and a `properties` object. Each property must have a `type`: `number`, `string`, `boolean`, `array` (with `items.type` when possible), or `object`.
 
 **Prompt quality:** Append an output-format hint to the prompt so the model returns pure JSON. Example:
@@ -159,6 +189,8 @@ The generated strategy must satisfy the project's `validateStrategyJson` and dat
 - Import validation fails → read the exact error, fix the offending field, retry import.
 - Same version exists → ask whether to bump version or change ID.
 - Max 2 retries exceeded → show the JSON and error, ask the user to guide the fix.
+- Analysis jobs fail with 429 / rate limit → the worker automatically requeues them with exponential backoff (up to `max_attempts`). You do not need to manually retry unless all attempts are exhausted.
+- Step or queue jobs permanently fail → use `task step reset`, `queue retry`, or `queue reset` to recover. **Never run ad-hoc `node -e` scripts or any other direct database access to modify queue or task state.**
 
 ## Workflow Guidance
 
@@ -172,3 +204,6 @@ The generated strategy must satisfy the project's `validateStrategyJson` and dat
    - phase = `analysis`: for each running step, report `done / total` from its `stats`.
    - status = `completed`: proceed to `get_task_results`.
 6. If a step or data-preparation fails, report the error and ask if the user wants to retry.
+   - If the failure is due to API rate limits (429), the worker retries automatically with exponential backoff. You only need to intervene if the step status eventually becomes `failed` after all retries are exhausted.
+   - To recover a failed step safely, use `task step reset --task-id <id> --step-id <id>` followed by `task step run` or `task run-all-steps`.
+   - **Never use direct database access** (e.g., `node -e` scripts opening DuckDB) to fix queue or task state. Always use the CLI commands listed above.

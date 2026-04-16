@@ -277,6 +277,7 @@ export interface Config {
   };
   paths: {
     media_dir: string;
+    download_dir: string;
     export_dir: string;
   };
   logging: {

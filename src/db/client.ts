@@ -83,6 +83,10 @@ export async function exec(sql: string): Promise<void> {
   });
 }
 
+export async function checkpoint(): Promise<void> {
+  return exec('CHECKPOINT;');
+}
+
 export function close(): void {
   if (_conn) {
     _conn.close();

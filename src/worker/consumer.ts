@@ -1,4 +1,4 @@
-import { getNextJob, updateJobStatus, listJobsByTask } from '../db/queue-jobs';
+import { getNextJob, updateJobStatus, requeueJob, listJobsByTask } from '../db/queue-jobs';
 import { getTaskById, updateTaskStatus, updateTaskStats } from '../db/tasks';
 import { getTargetStats, updateTargetStatus } from '../db/task-targets';
 import { getCommentById } from '../db/comments';
@@ -13,6 +13,7 @@ import { analyzeComment, analyzeMedia, analyzeWithStrategy } from './anthropic';
 import { parseCommentResult, parseMediaResult, parseStrategyResult } from './parser';
 import { QueueJob } from '../shared/types';
 import { sleep } from '../shared/utils';
+import { config } from '../config';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -42,13 +43,22 @@ export async function runConsumer(workerId: number): Promise<void> {
         console.log(`[Worker-${workerId}] Job ${job.id} completed`);
       } catch (err) {
         const error = String(err);
-        console.error(`[Worker-${workerId}] Job ${job.id} failed:`, error);
-        await updateJobStatus(job.id, 'failed');
-        if (job.target_type && job.target_id) {
-          await updateTargetStatus(job.task_id, job.target_type, job.target_id, 'failed', error);
-        }
-        if (job.strategy_id) {
-          await syncStepStats(job.task_id, job.strategy_id);
+        const isRateLimit = /429|rate_limit|engine is currently overloaded/i.test(error);
+
+        if (isRateLimit && job.attempts < job.max_attempts) {
+          const backoffMs = (config.worker.retry_delay_ms ?? 2000) * Math.pow(2, job.attempts);
+          console.error(`[Worker-${workerId}] Job ${job.id} hit rate limit, requeueing after ${backoffMs}ms (attempt ${job.attempts}/${job.max_attempts})`);
+          await requeueJob(job.id, error);
+          await sleep(backoffMs);
+        } else {
+          console.error(`[Worker-${workerId}] Job ${job.id} failed:`, error);
+          await updateJobStatus(job.id, 'failed');
+          if (job.target_type && job.target_id) {
+            await updateTargetStatus(job.task_id, job.target_type, job.target_id, 'failed', error);
+          }
+          if (job.strategy_id) {
+            await syncStepStats(job.task_id, job.strategy_id);
+          }
         }
       }
     } catch (err) {

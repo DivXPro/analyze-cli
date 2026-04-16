@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { Config } from '../shared/types';
 import { expandPath } from '../shared/utils';
 import { loadClaudeConfig } from './claude-config';
@@ -14,13 +15,14 @@ const DEFAULT_CONFIG: Config = {
     temperature: 0.3,
   },
   worker: {
-    concurrency: 2,
+    concurrency: 1,
     max_retries: 3,
     retry_delay_ms: 2000,
   },
   paths: {
-    media_dir: expandPath('~/.analyze-cli/media'),
-    export_dir: expandPath('~/.analyze-cli/exports'),
+    media_dir: path.resolve(process.cwd(), 'tmp/media'),
+    download_dir: path.resolve(process.cwd(), 'tmp/downloads'),
+    export_dir: path.resolve(process.cwd(), 'tmp/exports'),
   },
   logging: {
     level: 'info',
@@ -107,7 +109,7 @@ export function loadConfig(): Config {
       path: process.env.ANALYZE_CLI_DB_PATH ?? '',
     },
     worker: {
-      concurrency: parseInt(process.env.ANALYZE_CLI_WORKERS ?? '2', 10),
+      concurrency: parseInt(process.env.ANALYZE_CLI_WORKERS ?? '1', 10),
       max_retries: 3,
       retry_delay_ms: 2000,
     },

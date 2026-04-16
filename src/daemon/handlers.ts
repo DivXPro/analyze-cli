@@ -16,9 +16,42 @@ import { fetchViaOpencli } from '../data-fetcher/opencli';
 import { createStrategy, getStrategyById, listStrategies, validateStrategyJson, updateStrategy, parseJsonSchemaToColumns, createStrategyResultTable, syncStrategyResultTable } from '../db/strategies';
 import { getExistingResultIds } from '../db/analysis-results';
 import { getTaskPostStatus } from '../db/task-post-status';
+import { config } from '../config';
 import type { QueueJob } from '../shared/types';
 
 type Handler = (params: Record<string, unknown>) => Promise<unknown>;
+
+const FIELD_NAME_MAP: Record<string, string> = {
+  likes: 'like_count',
+  collects: 'collect_count',
+  comments: 'comment_count',
+  shares: 'share_count',
+  plays: 'play_count',
+  note_id: 'platform_post_id',
+};
+
+function normalizeFieldValueArray(item: unknown): unknown {
+  if (
+    Array.isArray(item) &&
+    item.length > 0 &&
+    item.every(
+      (i) =>
+        typeof i === 'object' &&
+        i !== null &&
+        'field' in i &&
+        'value' in i,
+    )
+  ) {
+    const obj: Record<string, unknown> = {};
+    for (const entry of item) {
+      const rawField = (entry as Record<string, unknown>).field as string;
+      const mappedField = FIELD_NAME_MAP[rawField] ?? rawField;
+      obj[mappedField] = (entry as Record<string, unknown>).value;
+    }
+    return obj;
+  }
+  return item;
+}
 
 interface RawPostItem {
   platform_post_id?: string;
@@ -77,11 +110,18 @@ export function getHandlers(): Record<string, Handler> {
         throw new Error(`Failed to parse import file: ${err instanceof Error ? err.message : String(err)}`);
       }
 
+      // Support opencli xiaohongshu note field-value array format: [{field, value}, ...]
+      const normalizedFirst = normalizeFieldValueArray(items);
+      if (normalizedFirst !== items) {
+        items = [normalizedFirst as RawPostItem];
+      }
+
       let imported = 0;
       let skipped = 0;
       const postIds: string[] = [];
 
-      for (const item of items) {
+      for (const rawItem of items) {
+        const item = normalizeFieldValueArray(rawItem) as RawPostItem;
         const platformPostId = item.platform_post_id ?? item.noteId ?? item.id ?? generateId();
         const existing = await query<{ id: string }>(
           'SELECT id FROM posts WHERE platform_id = ? AND platform_post_id = ?',
@@ -248,41 +288,48 @@ export function getHandlers(): Record<string, Handler> {
       const stats = await getTargetStats(taskId);
       await updateTaskStats(taskId, { total: stats.total, done: stats.done, failed: stats.failed });
 
-      // Skip already-analyzed comment targets
-      const analyzedCommentIds = new Set(
-        (await query<{ comment_id: string }>(
-          'SELECT DISTINCT comment_id FROM analysis_results_comments WHERE task_id = ?',
-          [taskId],
-        )).map(r => r.comment_id),
-      );
-      const targetsToProcess = stats.pending.filter(t => {
-        if (t.target_type === 'comment' && analyzedCommentIds.has(t.target_id)) return false;
-        return true;
-      });
+      const task = await getTaskById(taskId);
 
       let totalEnqueued = 0;
-      if (targetsToProcess.length > 0) {
-        const jobs = targetsToProcess.map(t => ({
-          id: generateId(),
-          task_id: taskId,
-          strategy_id: null as string | null,
-          target_type: t.target_type as 'post' | 'comment' | null,
-          target_id: t.target_id,
-          status: 'pending' as const,
-          priority: 0,
-          attempts: 0,
-          max_attempts: 3,
-          error: null,
-          created_at: now(),
-          processed_at: null,
-        }));
-        await enqueueJobs(jobs);
-        totalEnqueued += jobs.length;
-      }
+      let mediaJobsCreated = 0;
+      let targetsToProcess: { target_type: string; target_id: string }[] = [];
 
-      // Also enqueue media jobs for this task's posts
-      const mediaJobsCreated = await enqueueMediaJobsForTask(taskId);
-      totalEnqueued += mediaJobsCreated;
+      if (task?.template_id) {
+        // Skip already-analyzed comment targets
+        const analyzedCommentIds = new Set(
+          (await query<{ comment_id: string }>(
+            'SELECT DISTINCT comment_id FROM analysis_results_comments WHERE task_id = ?',
+            [taskId],
+          )).map(r => r.comment_id),
+        );
+        targetsToProcess = stats.pending.filter(t => {
+          if (t.target_type === 'comment' && analyzedCommentIds.has(t.target_id)) return false;
+          return true;
+        });
+
+        if (targetsToProcess.length > 0) {
+          const jobs = targetsToProcess.map(t => ({
+            id: generateId(),
+            task_id: taskId,
+            strategy_id: null as string | null,
+            target_type: t.target_type as 'post' | 'comment' | null,
+            target_id: t.target_id,
+            status: 'pending' as const,
+            priority: 0,
+            attempts: 0,
+            max_attempts: 3,
+            error: null,
+            created_at: now(),
+            processed_at: null,
+          }));
+          await enqueueJobs(jobs);
+          totalEnqueued += jobs.length;
+        }
+
+        // Also enqueue media jobs for this task's posts
+        mediaJobsCreated = await enqueueMediaJobsForTask(taskId);
+        totalEnqueued += mediaJobsCreated;
+      }
 
       return { enqueued: totalEnqueued, skipped: stats.pending.length - targetsToProcess.length, mediaJobs: mediaJobsCreated };
     },
@@ -831,6 +878,41 @@ export function getHandlers(): Record<string, Handler> {
       return { enqueued: jobs.length, skipped: targets.length - jobs.length };
     },
 
+    async 'queue.retry'(params) {
+      const taskId = (params.task_id as string | null) ?? undefined;
+      const { retryFailedJobs } = await import('../db/queue-jobs');
+      const retried = await retryFailedJobs(taskId);
+      return { retried };
+    },
+
+    async 'queue.reset'(params) {
+      const taskId = (params.task_id as string | null) ?? undefined;
+      const { resetJobs } = await import('../db/queue-jobs');
+      const reset = await resetJobs(taskId);
+      return { reset };
+    },
+
+    async 'task.step.reset'(params) {
+      const taskId = params.task_id as string;
+      const stepId = params.step_id as string;
+      const { getTaskStepById, updateTaskStepStatus } = await import('../db/task-steps');
+
+      const step = await getTaskStepById(stepId);
+      if (!step) throw new Error(`Step not found: ${stepId}`);
+      if (step.task_id !== taskId) throw new Error('Step does not belong to this task');
+
+      await updateTaskStepStatus(stepId, 'pending');
+
+      if (step.strategy_id) {
+        await run(
+          `UPDATE queue_jobs SET status = 'pending', attempts = 0, error = null, processed_at = null WHERE task_id = ? AND strategy_id = ? AND status = 'failed'`,
+          [taskId, step.strategy_id],
+        );
+      }
+
+      return { reset: true };
+    },
+
     async 'daemon.status'() {
       return {
         pid: process.pid,
@@ -865,6 +947,9 @@ function exportToCsv(rows: Record<string, unknown>[]): string {
 }
 
 async function enqueueMediaJobsForTask(taskId: string): Promise<number> {
+  const task = await getTaskById(taskId);
+  if (!task?.template_id) return 0;
+
   const postTargets = await query<{ target_id: string }>(
     "SELECT target_id FROM task_targets WHERE task_id = ? AND target_type = 'post'",
     [taskId],
@@ -961,7 +1046,9 @@ async function importMediaToDb(
   noteId?: string,
 ): Promise<number> {
   const platform = platformId.includes('xhs') ? 'xhs' : platformId.split('_')[0];
-  const downloadBase = `downloads/${platform}${noteId ? `/${noteId}` : ''}`;
+  const downloadBase = noteId
+    ? path.join(config.paths.download_dir, platform, noteId)
+    : path.join(config.paths.download_dir, platform);
 
   let count = 0;
   for (const item of data) {
@@ -1001,6 +1088,8 @@ async function importMediaToDb(
 
 async function createMediaQueueJobs(taskId: string, postId: string, mediaCount: number): Promise<void> {
   if (mediaCount === 0) return;
+  const task = await getTaskById(taskId);
+  if (!task?.template_id) return;
   const mediaFiles = await listMediaFilesByPost(postId);
   const recentCutoff = new Date(Date.now() - 60000);
   const recentMedia = mediaFiles.filter(m => new Date(m.created_at) >= recentCutoff);
@@ -1055,6 +1144,7 @@ async function runPrepareDataAsync(
       post_id: postId,
       note_id: noteId ?? postId,
       limit: '100',
+      download_dir: config.paths.download_dir,
     };
 
     try {

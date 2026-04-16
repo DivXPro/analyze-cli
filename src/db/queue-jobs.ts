@@ -33,6 +33,10 @@ export async function updateJobStatus(jobId: string, status: string): Promise<vo
   await run(`UPDATE queue_jobs SET status = ?, processed_at = ? WHERE id = ?`, [status, processedAt, jobId]);
 }
 
+export async function requeueJob(jobId: string, error: string): Promise<void> {
+  await run(`UPDATE queue_jobs SET status = 'pending', attempts = 0, error = ?, processed_at = null WHERE id = ?`, [error, jobId]);
+}
+
 export async function listJobsByTask(taskId: string): Promise<QueueJob[]> {
   return query<QueueJob>('SELECT * FROM queue_jobs WHERE task_id = ? ORDER BY created_at', [taskId]);
 }
@@ -48,6 +52,34 @@ export async function getQueueStats(): Promise<{ pending: number; processing: nu
     }
   }
   return stats;
+}
+
+export async function retryFailedJobs(taskId?: string): Promise<number> {
+  const whereClause = taskId ? "task_id = ? AND status = 'failed'" : "status = 'failed'";
+  const params = taskId ? [taskId] : [];
+  await run(
+    `UPDATE queue_jobs SET status = 'pending', attempts = 0, error = null, processed_at = null WHERE ${whereClause}`,
+    params,
+  );
+  const rows = await query<{ cnt: bigint }>(
+    `SELECT COUNT(*) as cnt FROM queue_jobs WHERE ${whereClause}`,
+    params,
+  );
+  return Number(rows[0]?.cnt ?? 0);
+}
+
+export async function resetJobs(taskId?: string): Promise<number> {
+  const whereClause = taskId ? "task_id = ? AND status != 'pending'" : "status != 'pending'";
+  const params = taskId ? [taskId] : [];
+  await run(
+    `UPDATE queue_jobs SET status = 'pending', attempts = 0, error = null, processed_at = null WHERE ${whereClause}`,
+    params,
+  );
+  const rows = await query<{ cnt: bigint }>(
+    `SELECT COUNT(*) as cnt FROM queue_jobs WHERE ${whereClause}`,
+    params,
+  );
+  return Number(rows[0]?.cnt ?? 0);
 }
 
 export async function syncWaitingMediaJobs(taskId: string, postId: string): Promise<number> {

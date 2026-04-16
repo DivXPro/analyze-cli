@@ -10,6 +10,7 @@ import { templateCommands } from './template';
 import { resultCommands, resultMediaCommands } from './result';
 import { strategyCommands } from './strategy';
 import { analyzeCommands } from './analyze';
+import { queueCommands } from './queue';
 
 const program = new Command();
 
@@ -46,6 +47,7 @@ resultMediaCommands(program);
 strategyCommands(program);
 
 analyzeCommands(program);
+queueCommands(program);
 
 program.parse(process.argv);
 
