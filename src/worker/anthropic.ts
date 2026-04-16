@@ -101,7 +101,48 @@ export async function buildStrategyPrompt(target: Post, strategy: Strategy): Pro
   for (const [key, value] of Object.entries(vars)) {
     result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
   }
+
+  const schemaHint = buildSchemaHint(strategy.output_schema);
+  if (schemaHint) {
+    result += `\n\n${schemaHint}`;
+  }
   return result;
+}
+
+function buildSchemaHint(outputSchema: Record<string, unknown>): string | null {
+  if (typeof outputSchema !== 'object' || outputSchema === null) return null;
+  const properties = (outputSchema.properties || {}) as Record<string, Record<string, unknown>>;
+  const keys = Object.keys(properties);
+  if (keys.length === 0) return null;
+
+  const lines = keys.map(key => `  "${key}": ${schemaDefToHint(properties[key])}`);
+  const example = `{\n${lines.join(',\n')}\n}`;
+
+  return `=== 输出要求 ===\n请严格按以下 JSON 格式返回结果，只输出纯 JSON，不要添加 markdown 代码块标记或额外解释：\n${example}`;
+}
+
+function schemaDefToHint(def: Record<string, unknown>): string {
+  if (typeof def !== 'object' || def === null) return 'any';
+  const type = def.type as string | undefined;
+  const enumValues = def.enum as unknown[] | undefined;
+  const items = def.items as Record<string, unknown> | undefined;
+  const props = def.properties as Record<string, Record<string, unknown>> | undefined;
+
+  if (enumValues && enumValues.length > 0) {
+    return enumValues.map(v => JSON.stringify(v)).join(' | ');
+  }
+
+  if (type === 'array' && items) {
+    return `[${schemaDefToHint(items)}]`;
+  }
+
+  if (type === 'object' && props && Object.keys(props).length > 0) {
+    const lines = Object.keys(props).map(k => `    "${k}": ${schemaDefToHint(props[k])}`);
+    return `{\n${lines.join(',\n')}\n  }`;
+  }
+
+  if (type) return type;
+  return 'any';
 }
 
 function filterMediaFiles(mediaFiles: MediaFile[], config: { media_types?: string[]; max_media?: number; mode?: string }): MediaFile[] {
