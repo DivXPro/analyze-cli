@@ -172,13 +172,39 @@ export function taskCommands(program: Command): void {
       console.log(pc.bold(`\nTask: ${full.name}`));
       console.log(`  ID:          ${full.id}`);
       console.log(`  Status:      ${full.status}`);
+      console.log(`  Phase:       ${full.phase}`);
       console.log(`  Created:     ${full.created_at}`);
       if (full.completed_at) console.log(`  Completed:   ${full.completed_at}`);
-      console.log(`\n  Progress:`);
-      console.log(`    Total:     ${full.total ?? 0}`);
-      console.log(`    Done:      ${full.done ?? 0}`);
-      console.log(`    Failed:    ${full.failed ?? 0}`);
-      console.log(`    Pending:   ${(full.pending as any[])?.length ?? 0}`);
+
+      console.log(`\n  Data Preparation:`);
+      const dp = full.phases?.dataPreparation ?? {};
+      console.log(`    Status:          ${dp.status ?? 'N/A'}`);
+      console.log(`    Total Posts:     ${dp.totalPosts ?? 0}`);
+      console.log(`    Comments Fetched:${dp.commentsFetched ?? 0}`);
+      console.log(`    Media Fetched:   ${dp.mediaFetched ?? 0}`);
+      console.log(`    Failed Posts:    ${dp.failedPosts ?? 0}`);
+
+      console.log(`\n  Steps:`);
+      const steps = full.phases?.steps ?? [];
+      if (steps.length === 0) {
+        console.log(`    (No steps added)`);
+      } else {
+        for (const s of steps) {
+          const st = s.status;
+          const color = st === 'completed' ? pc.green : st === 'running' ? pc.cyan : st === 'failed' ? pc.red : pc.gray;
+          console.log(`    [${s.stepOrder}] ${s.name} (${s.strategyId}) - ${color(st)}`);
+          if (s.stats) {
+            console.log(`        Progress: ${s.stats.done}/${s.stats.total} done, ${s.stats.failed} failed`);
+          }
+        }
+      }
+
+      console.log(`\n  Analysis Jobs:`);
+      const aj = full.phases?.analysis ?? {};
+      console.log(`    Total:     ${aj.totalJobs ?? 0}`);
+      console.log(`    Completed: ${aj.completedJobs ?? 0}`);
+      console.log(`    Failed:    ${aj.failedJobs ?? 0}`);
+      console.log(`    Pending:   ${aj.pendingJobs ?? 0}`);
       console.log();
     });
 }

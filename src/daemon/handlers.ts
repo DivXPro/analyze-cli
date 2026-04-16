@@ -253,8 +253,70 @@ export function getHandlers(): Record<string, Handler> {
       const taskId = params.task_id as string;
       const task = await getTaskById(taskId);
       if (!task) throw new Error(`Task not found: ${taskId}`);
+
       const stats = await getTargetStats(taskId);
-      return { ...task, ...stats };
+      const { getTaskPostStatuses } = await import('../db/task-post-status');
+      const { listTaskSteps } = await import('../db/task-steps');
+      const { listJobsByTask } = await import('../db/queue-jobs');
+
+      const postStatuses = await getTaskPostStatuses(taskId);
+      const steps = await listTaskSteps(taskId);
+      const jobs = await listJobsByTask(taskId);
+
+      const totalPosts = postStatuses.length;
+      const commentsFetched = postStatuses.filter(p => p.comments_fetched).length;
+      const mediaFetched = postStatuses.filter(p => p.media_fetched).length;
+      const failedPosts = postStatuses.filter(p => p.status === 'failed').length;
+
+      let dataPrepStatus: 'pending' | 'fetching' | 'done' | 'failed' = 'done';
+      if (totalPosts === 0) {
+        dataPrepStatus = 'pending';
+      } else if (failedPosts > 0 && failedPosts === totalPosts) {
+        dataPrepStatus = 'failed';
+      } else if (postStatuses.some(p => p.status === 'fetching')) {
+        dataPrepStatus = 'fetching';
+      } else if (postStatuses.some(p => !p.comments_fetched || !p.media_fetched)) {
+        dataPrepStatus = 'pending';
+      }
+
+      const stepDetails = steps.map(s => ({
+        stepId: s.id,
+        strategyId: s.strategy_id,
+        name: s.name,
+        status: s.status,
+        stats: s.stats ?? { total: 0, done: 0, failed: 0 },
+        stepOrder: s.step_order,
+      }));
+
+      const phase = dataPrepStatus !== 'done'
+        ? 'dataPreparation'
+        : stepDetails.some(s => s.status === 'pending' || s.status === 'running')
+          ? 'analysis'
+          : (task.status as string);
+
+      const jobStats = {
+        totalJobs: jobs.length,
+        completedJobs: jobs.filter(j => j.status === 'completed').length,
+        failedJobs: jobs.filter(j => j.status === 'failed').length,
+        pendingJobs: jobs.filter(j => j.status === 'pending' || j.status === 'waiting_media').length,
+      };
+
+      return {
+        ...task,
+        ...stats,
+        phase,
+        phases: {
+          dataPreparation: {
+            status: dataPrepStatus,
+            totalPosts,
+            commentsFetched,
+            mediaFetched,
+            failedPosts,
+          },
+          steps: stepDetails,
+          analysis: jobStats,
+        },
+      };
     },
 
     async 'task.list'(params) {
