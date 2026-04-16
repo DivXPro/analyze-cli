@@ -207,3 +207,19 @@ CREATE TABLE IF NOT EXISTS strategies (
     updated_at      TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS task_steps (
+    id              TEXT PRIMARY KEY,
+    task_id         TEXT NOT NULL REFERENCES tasks(id),
+    strategy_id     TEXT REFERENCES strategies(id),
+    name            TEXT NOT NULL,
+    step_order      INTEGER NOT NULL DEFAULT 0,
+    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed','skipped')),
+    stats           JSON,
+    error           TEXT,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW(),
+    UNIQUE(task_id, strategy_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_steps_task ON task_steps(task_id);
+

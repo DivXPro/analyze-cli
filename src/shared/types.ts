@@ -133,6 +133,21 @@ export interface TaskStats {
   failed: number;
 }
 
+export type TaskStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+
+export interface TaskStep {
+  id: string;
+  task_id: string;
+  strategy_id: string | null;
+  name: string;
+  step_order: number;
+  status: TaskStepStatus;
+  stats: TaskStats | null;
+  error: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface TaskTarget {
   id: string;
   task_id: string;

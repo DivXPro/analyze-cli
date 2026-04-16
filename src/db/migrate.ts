@@ -55,6 +55,28 @@ async function migrateQueueJobsStrategyId(): Promise<void> {
   }
 }
 
+async function migrateTaskStepsTable(): Promise<void> {
+  const hasTaskSteps = await query<{ name: string }>(
+    "SELECT table_name as name FROM information_schema.tables WHERE table_name = 'task_steps'"
+  );
+  if (hasTaskSteps.length === 0) {
+    await exec(`CREATE TABLE task_steps (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id),
+      strategy_id TEXT REFERENCES strategies(id),
+      name TEXT NOT NULL,
+      step_order INTEGER NOT NULL DEFAULT 0,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed','skipped')),
+      stats JSON,
+      error TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(task_id, strategy_id)
+    )`);
+    await exec('CREATE INDEX idx_task_steps_task ON task_steps(task_id)');
+  }
+}
+
 export async function runMigrations(): Promise<void> {
   const schemaPath = findSchemaPath();
   const schema = fs.readFileSync(schemaPath, 'utf-8');
@@ -63,6 +85,7 @@ export async function runMigrations(): Promise<void> {
   await migrateCliTemplates();
   await migrateStrategiesTable();
   await migrateQueueJobsStrategyId();
+  await migrateTaskStepsTable();
 
   // Migration: drop legacy analysis_results table if present
   const hasAnalysisResults = await query<{ name: string }>(
