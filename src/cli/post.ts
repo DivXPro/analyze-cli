@@ -38,7 +38,8 @@ export function postCommands(program: Command): void {
     .description('Import posts from a JSON or JSONL file')
     .requiredOption('--platform <id>', 'Platform ID')
     .option('--file <path>', 'Path to JSON or JSONL file')
-    .action(async (opts: { platform: string; file?: string }) => {
+    .option('--task-id <id>', 'Bind imported posts to a task')
+    .action(async (opts: { platform: string; file?: string; taskId?: string }) => {
       if (!opts.file) {
         console.log(pc.red('Error: --file is required'));
         process.exit(1);
@@ -48,7 +49,11 @@ export function postCommands(program: Command): void {
         console.log(pc.red(`File not found: ${opts.file}`));
         process.exit(1);
       }
-      const result = await daemonCall('post.import', { platform: opts.platform, file: opts.file }) as { imported: number; skipped: number; postIds?: string[] };
+      const result = await daemonCall('post.import', {
+        platform: opts.platform,
+        file: opts.file,
+        task_id: opts.taskId,
+      }) as { imported: number; skipped: number; postIds?: string[] };
       console.log(pc.green(`Imported: ${result.imported}, Skipped (duplicate): ${result.skipped}`));
       if (result.postIds && result.postIds.length > 0) {
         console.log(`Post IDs: ${result.postIds.join(',')}`);
