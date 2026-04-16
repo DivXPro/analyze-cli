@@ -19,6 +19,7 @@ export function getDbPath(): string {
 function getDb(): duckdb.Database {
   if (!_db) {
     _db = new duckdb.Database(getDbPath());
+    _db.run("PRAGMA journal_mode='wal';");
   }
   return _db;
 }
