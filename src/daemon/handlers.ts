@@ -548,14 +548,21 @@ export function getHandlers(): Record<string, Handler> {
       if (!task) throw new Error(`Task not found: ${taskId}`);
       if (!task.cli_templates) throw new Error('Task has no CLI templates');
 
-      let cliTemplates: { fetch_comments?: string; fetch_media?: string };
+      let cliTemplates: { fetch_note: string; fetch_comments?: string; fetch_media?: string };
       try {
-        cliTemplates = JSON.parse(task.cli_templates);
-      } catch {
-        throw new Error('Invalid cli_templates JSON in task');
+        const parsed = JSON.parse(task.cli_templates);
+        if (!parsed.fetch_note) {
+          throw new Error('cli_templates must contain "fetch_note" — it is required to enrich post data before analysis');
+        }
+        cliTemplates = parsed;
+      } catch (err: unknown) {
+        throw new Error(`Invalid cli_templates: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       const hasNotePlaceholder = (tpl: string) => tpl.includes('{post_id}') || tpl.includes('{note_id}');
+      if (!hasNotePlaceholder(cliTemplates.fetch_note)) {
+        throw new Error('fetch_note template must contain {post_id} or {note_id} placeholder');
+      }
       if (cliTemplates.fetch_comments && !hasNotePlaceholder(cliTemplates.fetch_comments)) {
         throw new Error('fetch_comments template must contain {post_id} or {note_id} placeholder');
       }
@@ -1120,7 +1127,7 @@ function isDuplicateError(err: unknown): boolean {
 
 async function runPrepareDataAsync(
   taskId: string,
-  cliTemplates: { fetch_comments?: string; fetch_media?: string },
+  cliTemplates: { fetch_note: string; fetch_comments?: string; fetch_media?: string },
 ): Promise<void> {
   const { listTaskTargets } = await import('../db/task-targets');
   const { getPostById } = await import('../db/posts');
@@ -1148,6 +1155,56 @@ async function runPrepareDataAsync(
     };
 
     try {
+      // Step 1: fetch_note — enrich post details (content, full stats, tags, etc.)
+      {
+        const noteResult = await fetchViaOpencli(cliTemplates.fetch_note, fetchVars);
+        if (noteResult.success && noteResult.data && noteResult.data.length > 0) {
+          const noteData = normalizeFieldValueArray(noteResult.data[0]) as RawPostItem;
+          await run(
+            `UPDATE posts SET
+              title = COALESCE(?, title),
+              content = COALESCE(?, content),
+              author_id = COALESCE(?, author_id),
+              author_name = COALESCE(?, author_name),
+              author_url = COALESCE(?, author_url),
+              cover_url = COALESCE(?, cover_url),
+              post_type = COALESCE(?, post_type),
+              like_count = COALESCE(?, like_count),
+              collect_count = COALESCE(?, collect_count),
+              comment_count = COALESCE(?, comment_count),
+              share_count = COALESCE(?, share_count),
+              play_count = COALESCE(?, play_count),
+              tags = COALESCE(?, tags),
+              media_files = COALESCE(?, media_files),
+              published_at = COALESCE(?, published_at),
+              metadata = COALESCE(?, metadata),
+              fetched_at = ?
+            WHERE id = ?`,
+            [
+              noteData.title ?? null,
+              noteData.content ?? noteData.text ?? noteData.desc ?? null,
+              noteData.author_id ?? null,
+              noteData.author_name ?? noteData.author ?? null,
+              noteData.author_url ?? null,
+              noteData.cover_url ?? null,
+              (noteData.post_type ?? noteData.type ?? null) as any,
+              noteData.like_count != null ? Number(noteData.like_count) : null,
+              noteData.collect_count != null ? Number(noteData.collect_count) : null,
+              noteData.comment_count != null ? Number(noteData.comment_count) : null,
+              noteData.share_count != null ? Number(noteData.share_count) : null,
+              noteData.play_count != null ? Number(noteData.play_count) : null,
+              noteData.tags ? JSON.stringify(noteData.tags) : null,
+              noteData.media_files ? JSON.stringify(noteData.media_files) : null,
+              noteData.published_at ? new Date(noteData.published_at) : null,
+              noteData.metadata ? JSON.stringify(noteData.metadata) : null,
+              now(),
+              postId,
+            ],
+          );
+        }
+      }
+
+      // Step 2: fetch_comments
       if (!item.comments_fetched && cliTemplates.fetch_comments) {
         await upsertTaskPostStatus(taskId, postId, { status: 'fetching' });
         const result = await fetchViaOpencli(cliTemplates.fetch_comments, fetchVars);
@@ -1159,6 +1216,7 @@ async function runPrepareDataAsync(
         await upsertTaskPostStatus(taskId, postId, { comments_fetched: true, comments_count: commentCount });
       }
 
+      // Step 3: fetch_media
       if (!item.media_fetched && cliTemplates.fetch_media) {
         const result = await fetchViaOpencli(cliTemplates.fetch_media, fetchVars);
         if (!result.success) {

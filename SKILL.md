@@ -58,10 +58,14 @@ Create an analysis task.
   ```bash
   analyze-cli task create --name "XHS Analysis" \
     --cli-templates '{
+      "fetch_note": "opencli xiaohongshu note {note_id} -f json",
       "fetch_comments": "opencli xiaohongshu comments {note_id} --limit 100 --with-replies false -f json",
       "fetch_media": "opencli xiaohongshu download {note_id} --output {download_dir}/xhs -f json"
     }'
   ```
+  - **`fetch_note` (required)**: Fetches full post details (content, tags, stats, author info) to enrich the imported search-result data. Search results only contain summary fields; without this step, the `{{content}}` variable will be empty during analysis. This step runs **first**, updating the post record in the database before comments/media are fetched.
+  - **`fetch_comments`** (optional): Fetches comment data via opencli. Runs after `fetch_note`.
+  - **`fetch_media`** (optional): Downloads media files (images/videos) via opencli. Runs after `fetch_comments`.
   - `{note_id}` will be substituted with the post URL (from `posts.url` or `metadata.note_id`).
   - `{download_dir}` will be substituted with the project's download directory (`tmp/downloads` under the project root by default). Always use `{download_dir}` in `--output` paths instead of hard-coded paths, so that downloaded files are stored in a predictable project-local location regardless of the working directory.
 
@@ -71,10 +75,11 @@ Add a strategy-based analysis step to a task.
 - When to use: the user wants to analyze data with a specific strategy (sentiment-topics, risk-detection, etc.).
 
 ### 6. prepare_task_data
-Download comments and media for all posts bound to a task.
+Enrich posts and download comments/media for all posts bound to a task. Executes in three sequential steps per post: (1) `fetch_note` (required) → (2) `fetch_comments` (optional) → (3) `fetch_media` (optional).
 - Command: `analyze-cli task prepare-data --task-id {task_id}`
 - When to use: after posts have been imported and bound to the task.
 - This command is resumable; interrupted runs will continue from unfinished posts.
+- `prepare-data` will fail if `cli_templates` does not contain `fetch_note`. `fetch_comments` and `fetch_media` are optional.
 
 ### 7. run_task_step
 Run a single task step.
@@ -102,18 +107,102 @@ Reset a failed or running task step back to pending, and retry its failed strate
 - Command: `analyze-cli task step reset --task-id {task_id} --step-id {step_id}`
 - When to use: a strategy analysis step failed (e.g., due to API rate limits) and the user wants to retry it safely without touching the database directly.
 
-### 12. retry_failed_queue_jobs
+### 12. analyze_run
+Run a strategy directly against a task (alternative to step-based approach).
+- Command: `analyze-cli analyze run --task-id <id> --strategy <id>`
+- When to use: quick single-strategy analysis without creating formal task steps.
+
+### 13. platform_mapping_list
+List field mappings for a platform (how platform fields map to system fields).
+- Command: `analyze-cli platform mapping list --platform <id> [--entity post|comment]`
+- When to use: understanding how platform-specific fields are normalized when importing posts/comments.
+
+### 14. list_posts
+List posts in the database.
+- Command: `analyze-cli post list [--platform <id>] [--limit <n>] [--offset <n>]`
+- When to use: the user wants to view previously imported posts.
+
+### 15. search_posts_db
+Search posts by keyword in the database.
+- Command: `analyze-cli post search --platform <id> --query <text> [--limit <n>]`
+- When to use: searching imported posts by content/title keywords.
+
+### 16. import_comments
+Import comments from a JSON/JSONL file and associate them with a post.
+- Command: `analyze-cli comment import --platform <id> --post-id <id> --file <path>`
+- When to use: after comment data has been fetched and saved to a file.
+- Duplicate comments (same platform_comment_id) are skipped.
+
+### 17. list_comments
+List comments for a post.
+- Command: `analyze-cli comment list --post-id <id> [--limit <n>]`
+- When to use: the user wants to view comments associated with a post.
+
+### 18. add_posts_to_task
+Add imported posts to a task.
+- Command: `analyze-cli task add-posts --task-id <id> --post-ids <ids>`
+- When to use: after `import_posts` (without `--task-id`) and the user wants to bind those posts to an existing task.
+
+### 19. add_comments_to_task
+Add imported comments to a task.
+- Command: `analyze-cli task add-comments --task-id <id> --comment-ids <ids>`
+- When to use: the user wants to analyze comments instead of (or in addition to) posts.
+
+### 20. start_task
+Enqueue analysis jobs for a task's pending targets.
+- Command: `analyze-cli task start --task-id <id>`
+- When to use: the user wants to begin analysis after steps are added. Unlike `run_all_steps`, this enqueues jobs for pending targets without running strategy steps.
+
+### 21. pause_task / resume_task / cancel_task
+Control task execution.
+- Commands: `analyze-cli task pause|resume|cancel --task-id <id>`
+- When to use: the user wants to pause, resume, or cancel a running task.
+
+### 22. list_tasks
+List all tasks, optionally filtered by status.
+- Command: `analyze-cli task list [--status <status>]`
+- When to use: the user wants to see existing tasks and their status.
+
+### 23. list_task_steps
+List all analysis steps for a task.
+- Command: `analyze-cli task step list --task-id <id>`
+- When to use: before running or resetting steps to verify their state.
+
+### 24. start_daemon / stop_daemon
+Manage the daemon process.
+- Commands: `analyze-cli daemon start [--fg]` / `analyze-cli daemon stop`
+- When to use: starting the daemon before a workflow, or stopping it after.
+
+### 25. list_strategies
+List all imported strategies.
+- Command: `analyze-cli strategy list`
+- When to use: before `add_step_to_task`, to confirm available strategy IDs.
+
+### 26. show_strategy
+Show details of a specific strategy.
+- Command: `analyze-cli strategy show --id <id>`
+- When to use: reviewing a strategy's parameters before importing or adding a step.
+
+### 27. strategy_result_list / stats / export
+Query strategy analysis results.
+- Commands:
+  - `analyze-cli strategy result list --task-id <id> --strategy <id> [--limit <n>]`
+  - `analyze-cli strategy result stats --task-id <id> --strategy <id>`
+  - `analyze-cli strategy result export --task-id <id> --strategy <id> [--format csv|json] [--output <path>]`
+- When to use: after analysis completes, to inspect or export per-post/per-comment results.
+
+### 28. retry_failed_queue_jobs
 Retry all failed queue jobs (optionally limited to a specific task).
 - Command: `analyze-cli queue retry [--task-id {task_id}]`
 - When to use: after analysis jobs failed and the user wants to re-run only the failed ones.
 
-### 13. reset_queue_jobs
+### 29. reset_queue_jobs
 Reset all non-pending queue jobs to pending (optionally limited to a specific task).
 - Command: `analyze-cli queue reset [--task-id {task_id}]`
 - When to use: you need to forcefully restart a batch of jobs that are stuck in `processing`, `failed`, or `completed`.
 - **Warning**: this is a blunt instrument; prefer `queue retry` for normal recovery.
 
-### 14. create_strategy
+### 30. create_strategy
 Create a new analysis strategy via natural language conversation.
 - When to use: the user asks to create/generate/build a new strategy (套路/分析维度/分析模板).
 - Workflow:
@@ -194,16 +283,17 @@ The generated strategy must satisfy the project's `validateStrategyJson` and dat
 
 ## Workflow Guidance
 
-1. If the user asks to "analyze" platform content, start with `search_posts` -> `add_platform` -> `create_task` -> `import_posts` (with `--task-id`).
-   - **Note**: `search_posts` returns summary data (title, likes, URL). If the strategy needs full post content (`{{content}}`), you may need to enrich the data first using `opencli xiaohongshu note {url} -f json` before `import_posts`.
-2. Then `add_step_to_task` for each strategy they need.
-3. Run `prepare_task_data` to fetch comments and media via the opencli templates defined in `create_task`.
-4. Run `run_all_steps` to start the analysis pipeline.
-5. Poll `get_task_status` periodically and report progress:
+1. If the user asks to "analyze" platform content, start with `opencli xiaohongshu search` -> `analyze-cli platform list` -> `analyze-cli platform add` (if not found) -> `analyze-cli task create` -> `analyze-cli post import` (with `--task-id`).
+   - **Always check if the platform exists first** using `analyze-cli platform list`. If the platform is already registered, skip `platform add`. This avoids "already exists" errors mid-workflow.
+   - **Note**: `opencli xiaohongshu search` returns summary data (title, likes, URL). If the strategy needs full post content (`{{content}}`), you may need to enrich the data first using `opencli xiaohongshu note {url} -f json` before `post import`.
+2. Then `analyze-cli task step add` for each strategy they need.
+3. Run `analyze-cli task prepare-data` to fetch comments and media via the opencli templates defined in `task create`.
+4. Run `analyze-cli task run-all-steps` to start the analysis pipeline.
+5. Poll `analyze-cli task status` periodically and report progress:
    - phase = `dataPreparation`: report `commentsFetched / totalPosts` and `mediaFetched / totalPosts`.
    - phase = `analysis`: for each running step, report `done / total` from its `stats`.
-   - status = `completed`: proceed to `get_task_results`.
+   - status = `completed`: proceed to `analyze-cli task results`.
 6. If a step or data-preparation fails, report the error and ask if the user wants to retry.
    - If the failure is due to API rate limits (429), the worker retries automatically with exponential backoff. You only need to intervene if the step status eventually becomes `failed` after all retries are exhausted.
-   - To recover a failed step safely, use `task step reset --task-id <id> --step-id <id>` followed by `task step run` or `task run-all-steps`.
+   - To recover a failed step safely, use `analyze-cli task step reset --task-id <id> --step-id <id>` followed by `analyze-cli task step run` or `analyze-cli task run-all-steps`.
    - **Never use direct database access** (e.g., `node -e` scripts opening DuckDB) to fix queue or task state. Always use the CLI commands listed above.
