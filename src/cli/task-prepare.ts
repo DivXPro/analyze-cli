@@ -10,28 +10,48 @@ export function taskPrepareCommands(program: Command): void {
     .description('Download comments and media for task posts via opencli (resumable)')
     .requiredOption('--task-id <id>', 'Task ID')
     .action(async (opts: { taskId: string }) => {
-      const task = await daemonCall('task.status', { task_id: opts.taskId }) as Record<string, any>;
-      if (!task.id) {
+      const t = await daemonCall('task.status', { task_id: opts.taskId }) as Record<string, any>;
+      if (!t.id) {
         console.log(pc.red(`Task not found: ${opts.taskId}`));
         process.exit(1);
       }
 
-      if (!task.cli_templates) {
+      if (!t.cli_templates) {
         console.log(pc.red('Task has no CLI templates. Create the task with --cli-templates.'));
         process.exit(1);
       }
 
-      const result = await daemonCall('task.prepareData', { task_id: opts.taskId }) as {
-        success: number;
-        failed: number;
-        skipped: number;
+      const started = await daemonCall('task.prepareData', { task_id: opts.taskId }) as { started?: boolean };
+      if (!started.started) {
+        console.log(pc.red('Failed to start data preparation'));
+        process.exit(1);
+      }
+
+      console.log(pc.yellow('Data preparation started. Polling progress...\n'));
+
+      const poll = async () => {
+        const status = await daemonCall('task.status', { task_id: opts.taskId }) as Record<string, any>;
+        const dp = status.phases?.dataPreparation ?? {};
+        const done = dp.status === 'done';
+        const failed = dp.status === 'failed';
+
+        process.stdout.write(`\r  Posts: ${dp.totalPosts ?? 0} | Comments: ${dp.commentsFetched ?? 0} | Media: ${dp.mediaFetched ?? 0}`);
+        if (done || failed) {
+          console.log();
+          console.log(pc.dim('─'.repeat(40)));
+          if (failed) {
+            console.log(pc.red('Data preparation failed'));
+          } else {
+            console.log(pc.green('Data preparation complete'));
+          }
+          console.log(`  Done: ${dp.commentsFetched ?? 0}/${dp.totalPosts ?? 0} posts, ${dp.failedPosts ?? 0} failed`);
+          console.log();
+          return;
+        }
+
+        setTimeout(poll, 2000);
       };
 
-      console.log(pc.dim('\n' + '─'.repeat(40)));
-      console.log(pc.green('\nData preparation complete:'));
-      console.log(`  Success: ${result.success}`);
-      console.log(`  Skipped (already done): ${result.skipped}`);
-      console.log(`  Failed: ${result.failed}`);
-      console.log();
+      await poll();
     });
 }

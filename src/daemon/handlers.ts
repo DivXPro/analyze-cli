@@ -218,7 +218,7 @@ export function getHandlers(): Record<string, Handler> {
     },
 
     async 'task.create'(params) {
-      const id = generateId();
+      const id = (params.id as string | undefined) ?? generateId();
       await createTask({
         id,
         name: params.name as string,
@@ -516,61 +516,9 @@ export function getHandlers(): Record<string, Handler> {
         throw new Error('fetch_media template must contain {post_id} or {note_id} placeholder');
       }
 
-      const { listTaskTargets } = await import('../db/task-targets');
-      const { getPostById } = await import('../db/posts');
-      const postTargets = (await listTaskTargets(taskId)).filter(t => t.target_type === 'post');
-      if (postTargets.length === 0) throw new Error('No posts bound to this task');
-
-      const postIds = postTargets.map(t => t.target_id);
-      const firstPost = await getPostById(postIds[0]);
-      if (!firstPost) throw new Error(`Post not found: ${postIds[0]}`);
-      const platformId = firstPost.platform_id;
-
-      const pending = await getPendingPostIds(taskId);
-      let successCount = 0;
-      let failCount = 0;
-
-      for (const item of pending) {
-        const postId = item.post_id;
-        const postMeta = await getPostById(postId);
-        const noteId = (postMeta?.metadata as Record<string, unknown> | null)?.note_id as string | undefined;
-        const fetchVars: Record<string, string> = {
-          post_id: postId,
-          note_id: noteId ?? postId,
-          limit: '100',
-        };
-
-        if (!item.comments_fetched && cliTemplates.fetch_comments) {
-          await upsertTaskPostStatus(taskId, postId, { status: 'fetching' });
-          const result = await fetchViaOpencli(cliTemplates.fetch_comments, fetchVars);
-          if (!result.success) {
-            await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: result.error ?? 'unknown' });
-            failCount++;
-            continue;
-          }
-          const commentCount = await importCommentsToDb(result.data ?? [], postId, platformId);
-          await upsertTaskPostStatus(taskId, postId, { comments_fetched: true, comments_count: commentCount });
-        }
-
-        if (!item.media_fetched && cliTemplates.fetch_media) {
-          const result = await fetchViaOpencli(cliTemplates.fetch_media, fetchVars);
-          if (!result.success) {
-            await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: result.error ?? 'unknown' });
-            failCount++;
-            continue;
-          }
-          const mediaCount = await importMediaToDb(result.data ?? [], postId, platformId, noteId);
-          await upsertTaskPostStatus(taskId, postId, { media_fetched: true, media_count: mediaCount });
-          await createMediaQueueJobs(taskId, postId, mediaCount);
-          await syncWaitingMediaJobs(taskId, postId);
-        }
-
-        await upsertTaskPostStatus(taskId, postId, { status: 'done' });
-        successCount++;
-      }
-
-      await updateTaskStatus(taskId, 'pending');
-      return { success: successCount, failed: failCount, skipped: postIds.length - pending.length };
+      // Run data preparation asynchronously so the CLI can poll status
+      runPrepareDataAsync(taskId, cliTemplates).catch(() => {});
+      return { started: true };
     },
 
     async 'platform.list'() {
@@ -1070,4 +1018,63 @@ async function createMediaQueueJobs(taskId: string, postId: string, mediaCount: 
 function isDuplicateError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /duplicate|unique|constraint/i.test(msg);
+}
+
+async function runPrepareDataAsync(
+  taskId: string,
+  cliTemplates: { fetch_comments?: string; fetch_media?: string },
+): Promise<void> {
+  const { listTaskTargets } = await import('../db/task-targets');
+  const { getPostById } = await import('../db/posts');
+  const postTargets = (await listTaskTargets(taskId)).filter(t => t.target_type === 'post');
+  if (postTargets.length === 0) return;
+
+  const postIds = postTargets.map(t => t.target_id);
+  const firstPost = await getPostById(postIds[0]);
+  if (!firstPost) return;
+  const platformId = firstPost.platform_id;
+
+  const pending = await getPendingPostIds(taskId);
+
+  for (const item of pending) {
+    const postId = item.post_id;
+    const postMeta = await getPostById(postId);
+    const noteId = (postMeta?.metadata as Record<string, unknown> | null)?.note_id as string | undefined;
+    const fetchVars: Record<string, string> = {
+      post_id: postId,
+      note_id: noteId ?? postId,
+      limit: '100',
+    };
+
+    try {
+      if (!item.comments_fetched && cliTemplates.fetch_comments) {
+        await upsertTaskPostStatus(taskId, postId, { status: 'fetching' });
+        const result = await fetchViaOpencli(cliTemplates.fetch_comments, fetchVars);
+        if (!result.success) {
+          await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: result.error ?? 'unknown' });
+          continue;
+        }
+        const commentCount = await importCommentsToDb(result.data ?? [], postId, platformId);
+        await upsertTaskPostStatus(taskId, postId, { comments_fetched: true, comments_count: commentCount });
+      }
+
+      if (!item.media_fetched && cliTemplates.fetch_media) {
+        const result = await fetchViaOpencli(cliTemplates.fetch_media, fetchVars);
+        if (!result.success) {
+          await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: result.error ?? 'unknown' });
+          continue;
+        }
+        const mediaCount = await importMediaToDb(result.data ?? [], postId, platformId, noteId);
+        await upsertTaskPostStatus(taskId, postId, { media_fetched: true, media_count: mediaCount });
+        await createMediaQueueJobs(taskId, postId, mediaCount);
+        await syncWaitingMediaJobs(taskId, postId);
+      }
+
+      await upsertTaskPostStatus(taskId, postId, { status: 'done' });
+    } catch (err: unknown) {
+      await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  await updateTaskStatus(taskId, 'pending');
 }
