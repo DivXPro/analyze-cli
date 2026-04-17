@@ -1,14 +1,14 @@
 {
   "name": "analyze-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI-powered social media content analysis CLI tool",
   "main": "dist/cli/index.js",
   "bin": {
     "analyze-cli": "./bin/analyze-cli.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "tsup src/cli/index.ts --format cjs --out-dir dist/cli --external duckdb --minify",
+    "dev": "tsup src/cli/index.ts --format cjs --out-dir dist/cli --external duckdb --watch",
     "test": "node --test --experimental-strip-types 'test/*.test.ts'",
     "test:offline": "node --test --experimental-strip-types 'test/opencli.test.ts' 'test/import-offline.test.ts' 'test/prepare-data-offline.test.ts'",
     "test:integration": "node --test --experimental-strip-types 'test/task-post-status.test.ts' 'test/prepare-data.test.ts'",
@@ -27,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/uuid": "^10.0.0",
+    "tsup": "^8.4.0",
     "typescript": "^5.8.3"
   },
   "engines": {
