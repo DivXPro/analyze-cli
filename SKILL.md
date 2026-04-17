@@ -1,9 +1,8 @@
-***
-
+---
 name: analyze-cli
 description: Social media data analysis CLI — search, import, download comments/media, and run multi-step strategy analysis.
 type: tool-use
---------------
+---
 
 # analyze-cli Skill
 
