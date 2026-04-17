@@ -6,6 +6,12 @@
   "bin": {
     "analyze-cli": "./bin/analyze-cli.js"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "package.json",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup src/cli/index.ts --format cjs --out-dir dist/cli --external duckdb --minify",
     "dev": "tsup src/cli/index.ts --format cjs --out-dir dist/cli --external duckdb --watch",
