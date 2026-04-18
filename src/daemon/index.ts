@@ -10,6 +10,7 @@ import { getTotalActiveJobs, requestShutdown, resetShutdown } from '../shared/sh
 import { sleep } from '../shared/utils';
 import { config } from '../config';
 import { initLogger, getLogger, getLogFilePath } from '../shared/logger';
+import { VERSION } from '../shared/version';
 import * as fs from 'fs';
 
 const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30000;
@@ -100,7 +101,7 @@ export class Daemon {
 
 function writePid(): void {
   const { DAEMON_PID_FILE } = require('../shared/constants');
-  fs.writeFileSync(DAEMON_PID_FILE, String(process.pid));
+  fs.writeFileSync(DAEMON_PID_FILE, `${process.pid}:${VERSION}`);
 }
 
 function readPid(): number | null {

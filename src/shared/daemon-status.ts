@@ -4,8 +4,20 @@ import { DAEMON_PID_FILE, IPC_SOCKET_PATH } from './constants';
 export function getDaemonPid(): number | null {
   if (!fs.existsSync(DAEMON_PID_FILE)) return null;
   try {
-    const pid = parseInt(fs.readFileSync(DAEMON_PID_FILE, 'utf-8').trim(), 10);
+    const raw = fs.readFileSync(DAEMON_PID_FILE, 'utf-8').trim();
+    const pid = parseInt(raw.split(':')[0], 10);
     return isNaN(pid) ? null : pid;
+  } catch {
+    return null;
+  }
+}
+
+export function getDaemonVersion(): string | null {
+  if (!fs.existsSync(DAEMON_PID_FILE)) return null;
+  try {
+    const raw = fs.readFileSync(DAEMON_PID_FILE, 'utf-8').trim();
+    const parts = raw.split(':');
+    return parts[1] ?? null;
   } catch {
     return null;
   }

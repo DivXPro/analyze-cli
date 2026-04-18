@@ -1,7 +1,8 @@
 import * as path from 'path';
 import { fork } from 'child_process';
 import { sendIpcRequest } from '../daemon/ipc-server';
-import { isDaemonRunning, cleanupStaleDaemonFiles } from '../shared/daemon-status';
+import { isDaemonRunning, cleanupStaleDaemonFiles, getDaemonVersion, getDaemonPid } from '../shared/daemon-status';
+import { VERSION } from '../shared/version';
 
 async function startDaemon(): Promise<void> {
   if (isDaemonRunning()) return;
@@ -21,9 +22,25 @@ async function startDaemon(): Promise<void> {
   throw new Error('Failed to start daemon');
 }
 
-export async function daemonCall(method: string, params: Record<string, unknown>): Promise<unknown> {
+async function ensureDaemonVersion(): Promise<void> {
   if (!isDaemonRunning()) {
     await startDaemon();
+    return;
   }
+  const daemonVersion = getDaemonVersion();
+  if (daemonVersion && daemonVersion !== VERSION) {
+    const pid = getDaemonPid();
+    if (pid) {
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+    }
+    cleanupStaleDaemonFiles();
+    // Wait briefly for old daemon to exit
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await startDaemon();
+  }
+}
+
+export async function daemonCall(method: string, params: Record<string, unknown>): Promise<unknown> {
+  await ensureDaemonVersion();
   return sendIpcRequest(method, params);
 }
