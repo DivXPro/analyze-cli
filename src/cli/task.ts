@@ -204,6 +204,16 @@ export function taskCommands(program: Command): void {
       console.log(`    Completed: ${aj.completedJobs ?? 0}`);
       console.log(`    Failed:    ${aj.failedJobs ?? 0}`);
       console.log(`    Pending:   ${aj.pendingJobs ?? 0}`);
+
+      const recentErrors = full.recentErrors as { target_type: string; target_id: string; error: string }[] | undefined;
+      if (recentErrors && recentErrors.length > 0) {
+        console.log(`\n  ${pc.red('Recent Failures:')}`);
+        for (const e of recentErrors) {
+          const shortId = e.target_id?.slice(0, 8) ?? 'unknown';
+          console.log(`    - ${e.target_type} ${shortId}: ${pc.red(e.error.slice(0, 100))}`);
+        }
+      }
+
       console.log();
     });
 

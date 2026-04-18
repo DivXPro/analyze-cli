@@ -21,14 +21,16 @@ import {
   isShuttingDown,
 } from '../shared/shutdown';
 import { config } from '../config';
+import { getLogger } from '../shared/logger';
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_WAIT_MS = 30000;
 const EXPONENTIAL_BACKOFF_FACTOR = 2;
 
 export async function runConsumer(workerId: number): Promise<void> {
+  const logger = getLogger();
   const concurrency = config.worker.concurrency ?? 1;
-  console.log(`[Worker-${workerId}] Consumer started, concurrency=${concurrency}`);
+  logger.info(`[Worker-${workerId}] Consumer started, concurrency=${concurrency}`);
 
   registerWorker(workerId);
   const active = new Set<Promise<void>>();
@@ -42,7 +44,7 @@ export async function runConsumer(workerId: number): Promise<void> {
       if (isShuttingDown()) {
         // Stop accepting new jobs; drain active jobs then exit
         if (active.size === 0) {
-          console.log(`[Worker-${workerId}] Graceful shutdown complete`);
+          logger.info(`[Worker-${workerId}] Graceful shutdown complete`);
           break;
         }
         await Promise.race(active);
@@ -74,6 +76,7 @@ export async function runConsumer(workerId: number): Promise<void> {
         }
 
         // Nothing active and nothing in buffer → wait for notification or timeout
+        logger.debug(`[Worker-${workerId}] Waiting for job (timeout ${currentWaitMs}ms)`);
         const gotNotify = await waitForJob(currentWaitMs);
         if (gotNotify) {
           currentWaitMs = POLL_INTERVAL_MS;
@@ -81,7 +84,7 @@ export async function runConsumer(workerId: number): Promise<void> {
           currentWaitMs = Math.min(currentWaitMs * EXPONENTIAL_BACKOFF_FACTOR, MAX_WAIT_MS);
         }
       } catch (err) {
-        console.error(`[Worker-${workerId}] Error in consumer loop:`, err);
+        logger.error(`[Worker-${workerId}] Error in consumer loop: ${err instanceof Error ? err.message : String(err)}`);
         await sleep(POLL_INTERVAL_MS);
         currentWaitMs = POLL_INTERVAL_MS;
       }
@@ -92,7 +95,8 @@ export async function runConsumer(workerId: number): Promise<void> {
 }
 
 async function processJobWithLifecycle(job: QueueJob, workerId: number): Promise<void> {
-  console.log(`[Worker-${workerId}] Processing job ${job.id} for task ${job.task_id}`);
+  const logger = getLogger();
+  logger.info(`[Worker-${workerId}] Processing job ${job.id} for task ${job.task_id}`);
 
   try {
     await processJob(job);
@@ -104,20 +108,20 @@ async function processJobWithLifecycle(job: QueueJob, workerId: number): Promise
     if (job.strategy_id) {
       await syncStepStats(job.task_id, job.strategy_id);
     }
-    console.log(`[Worker-${workerId}] Job ${job.id} completed`);
+    logger.info(`[Worker-${workerId}] Job ${job.id} completed`);
   } catch (err) {
     const error = String(err);
     const isRateLimit = /429|rate_limit|engine is currently overloaded/i.test(error);
 
     if (job.attempts < job.max_attempts) {
-      console.error(`[Worker-${workerId}] Job ${job.id} failed, requeueing (attempt ${job.attempts}/${job.max_attempts}): ${error}`);
+      logger.warn(`[Worker-${workerId}] Job ${job.id} failed, requeueing (attempt ${job.attempts}/${job.max_attempts}): ${error}`);
       await requeueJob(job.id, error);
       if (isRateLimit) {
         const backoffMs = (config.worker.retry_delay_ms ?? 2000) * Math.pow(2, job.attempts);
         await sleep(backoffMs);
       }
     } else {
-      console.error(`[Worker-${workerId}] Job ${job.id} failed permanently after ${job.attempts} attempts:`, error);
+      logger.error(`[Worker-${workerId}] Job ${job.id} failed permanently after ${job.attempts} attempts: ${error}`);
       await updateJobStatus(job.id, 'failed');
       if (job.target_type && job.target_id) {
         await updateTargetStatus(job.task_id, job.target_type, job.target_id, 'failed', error);

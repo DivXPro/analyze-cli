@@ -414,6 +414,16 @@ export function getHandlers(): Record<string, Handler> {
         pendingJobs: jobs.filter(j => j.status === 'pending' || j.status === 'waiting_media').length,
       };
 
+      // Get recent failures for quick debugging
+      const recentErrors = jobs
+        .filter(j => j.status === 'failed' && j.error)
+        .slice(0, 3)
+        .map(j => ({
+          target_type: j.target_type ?? 'unknown',
+          target_id: j.target_id ?? '',
+          error: j.error ?? '',
+        }));
+
       return {
         ...task,
         ...stats,
@@ -429,6 +439,7 @@ export function getHandlers(): Record<string, Handler> {
           steps: stepDetails,
           analysis: jobStats,
         },
+        recentErrors,
       };
     },
 
@@ -940,6 +951,40 @@ export function getHandlers(): Record<string, Handler> {
       const { resetJobs } = await import('../db/queue-jobs');
       const reset = await resetJobs(taskId);
       return { reset };
+    },
+
+    async 'queue.list'(params) {
+      const taskId = params.task_id as string;
+      const failedOnly = (params.failed_only as boolean) ?? false;
+      const limit = Number(params.limit ?? 20);
+
+      let sql = `SELECT id, target_id, target_type, status, attempts, error
+                 FROM queue_jobs WHERE task_id = ?`;
+      const args: unknown[] = [taskId];
+
+      if (failedOnly) {
+        sql += ` AND status = 'failed'`;
+      }
+      sql += ` ORDER BY created_at DESC LIMIT ?`;
+      args.push(limit);
+
+      const rows = await query<{
+        id: string;
+        target_id: string;
+        target_type: string;
+        status: string;
+        attempts: number;
+        error: string | null;
+      }>(sql, args);
+
+      return rows.map(r => ({
+        id: r.id,
+        target_id: r.target_id,
+        target_type: r.target_type,
+        status: r.status,
+        attempts: r.attempts,
+        error: r.error,
+      }));
     },
 
     async 'task.step.reset'(params) {

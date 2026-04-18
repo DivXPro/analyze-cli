@@ -11,6 +11,7 @@ import { resultCommands, resultMediaCommands } from './result';
 import { strategyCommands } from './strategy';
 import { analyzeCommands } from './analyze';
 import { queueCommands } from './queue';
+import { logsCommands } from './logs';
 import pkg from '../../package.json';
 
 const program = new Command();
@@ -49,6 +50,7 @@ strategyCommands(program);
 
 analyzeCommands(program);
 queueCommands(program);
+logsCommands(program);
 
 program.parse(process.argv);
 
