@@ -597,7 +597,7 @@ export function getHandlers(): Record<string, Handler> {
         throw new Error(`Invalid cli_templates: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      const hasNotePlaceholder = (tpl: string) => tpl.includes('{post_id}') || tpl.includes('{note_id}');
+      const hasNotePlaceholder = (tpl: string) => tpl.includes('{post_id}') || tpl.includes('{note_id}') || tpl.includes('{url}');
       if (!hasNotePlaceholder(cliTemplates.fetch_note)) {
         throw new Error('fetch_note template must contain {post_id} or {note_id} placeholder');
       }
