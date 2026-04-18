@@ -1265,10 +1265,52 @@ async function runPrepareDataAsync(
 
       // Trigger streaming analysis for this post
       try {
-        const { onPostReady } = await import('./stream-scheduler');
-        const result = await onPostReady(taskId, postId);
-        if (result.enqueued > 0) {
-          console.log(`[stream-scheduler] Post ${postId}: enqueued ${result.enqueued} jobs`);
+        const { buildJobsForPost } = await import('./stream-scheduler');
+        const { enqueueJobs } = await import('../db/queue-jobs');
+        const { listTaskSteps } = await import('../db/task-steps');
+        const { getStrategyById } = await import('../db/strategies');
+        const { listTaskTargets } = await import('../db/task-targets');
+        const { getExistingJobTargets } = await import('../db/queue-jobs');
+        const { query } = await import('../db/client');
+        const { generateId: genId } = await import('../shared/utils');
+
+        const steps = await listTaskSteps(taskId);
+        const strategies = new Map();
+        for (const step of steps) {
+          if (step.strategy_id && !strategies.has(step.strategy_id)) {
+            const strategy = await getStrategyById(step.strategy_id);
+            if (strategy) strategies.set(step.strategy_id, strategy);
+          }
+        }
+        const taskTargets = await listTaskTargets(taskId);
+        const mediaStatus = await query<{ media_fetched: boolean }>(
+          `SELECT media_fetched FROM task_post_status WHERE task_id = ? AND post_id = ?`,
+          [taskId, postId]
+        );
+        const mediaReady = mediaStatus[0]?.media_fetched === true;
+        const comments = await query<{ id: string }>(
+          `SELECT id FROM comments WHERE post_id = ?`,
+          [postId]
+        );
+
+        const { jobs, stepUpdates } = buildJobsForPost(
+          taskId,
+          postId,
+          steps,
+          strategies,
+          taskTargets,
+          await getExistingJobTargets(taskId, strategies.keys().next().value ?? ''),
+          comments,
+          mediaReady,
+          genId,
+        );
+
+        if (jobs.length > 0) {
+          await enqueueJobs(jobs);
+          for (const update of stepUpdates) {
+            await (await import('../db/task-steps')).updateTaskStepStatus(update.stepId, update.status, update.stats);
+          }
+          console.log(`[stream-scheduler] Post ${postId}: enqueued ${jobs.length} jobs`);
         }
       } catch (schedErr: unknown) {
         const msg = schedErr instanceof Error ? schedErr.message : String(schedErr);

@@ -25,11 +25,12 @@ const { upsertTaskPostStatus } = taskPostStatus;
 import * as utils from '../dist/shared/utils.js';
 const { generateId, now } = utils;
 import * as streamScheduler from '../dist/daemon/stream-scheduler.js';
-const { onPostReady } = streamScheduler;
+const { buildJobsForPost } = streamScheduler;
+import { enqueueJobs } from '../dist/db/queue-jobs.js';
 
 const RUN_ID = `ss_${Date.now()}`;
 
-describe('stream-scheduler — onPostReady', { timeout: 15000 }, () => {
+describe('stream-scheduler — buildJobsForPost', { timeout: 15000 }, () => {
   let platformId: string;
   let taskId: string;
   let postId: string;
@@ -135,31 +136,72 @@ describe('stream-scheduler — onPostReady', { timeout: 15000 }, () => {
     await run("UPDATE task_steps SET status = 'pending', stats = ? WHERE id = ?", [JSON.stringify({ total: 0, done: 0, failed: 0 }), stepId]);
   });
 
-  it('enqueues jobs for all comments when post is ready', async () => {
-    const result = await onPostReady(taskId, postId);
-    assert.equal(result.enqueued, 1);
-    assert.equal(result.skipped, 0);
+  it('builds jobs for all comments when post is ready', async () => {
+    const steps = await query('SELECT * FROM task_steps WHERE task_id = ?', [taskId]);
+    const strategiesMap = new Map();
+    strategiesMap.set(strategyId, { id: strategyId, target: 'comment', needs_media: null });
+    const taskTargets = await query('SELECT target_id, target_type FROM task_targets WHERE task_id = ?', [taskId]);
+    const existingTargets = new Set<string>();
+    const commentsList = await query('SELECT id FROM comments WHERE post_id = ?', [postId]);
 
-    const jobs = await query('SELECT * FROM queue_jobs WHERE task_id = ? AND strategy_id = ?', [taskId, strategyId]);
+    const { jobs, stepUpdates } = buildJobsForPost(
+      taskId,
+      postId,
+      steps.map(s => ({ ...s, stats: typeof s.stats === 'string' ? JSON.parse(s.stats) : s.stats })),
+      strategiesMap,
+      taskTargets,
+      existingTargets,
+      commentsList,
+      true,
+      generateId,
+    );
+
     assert.equal(jobs.length, 1);
+    assert.equal(stepUpdates.length, 1);
     assert.equal(jobs[0].target_id, commentId);
     assert.equal(jobs[0].target_type, 'comment');
-    assert.equal(jobs[0].status, 'pending');
 
-    // Step should be marked running
-    const stepRows = await query('SELECT status, stats FROM task_steps WHERE id = ?', [stepId]);
-    assert.equal(stepRows[0].status, 'running');
-    const stats = typeof stepRows[0].stats === 'string' ? JSON.parse(stepRows[0].stats) : stepRows[0].stats;
-    assert.equal(stats.total, 1);
+    // Apply jobs
+    await enqueueJobs(jobs);
+    const dbJobs = await query('SELECT * FROM queue_jobs WHERE task_id = ?', [taskId]);
+    assert.equal(dbJobs.length, 1);
   });
 
   it('skips already-enqueued targets on second call', async () => {
-    // First call enqueues the job
-    await onPostReady(taskId, postId);
+    const steps = await query('SELECT * FROM task_steps WHERE task_id = ?', [taskId]);
+    const strategiesMap = new Map();
+    strategiesMap.set(strategyId, { id: strategyId, target: 'comment', needs_media: null });
+    const taskTargets = await query('SELECT target_id, target_type FROM task_targets WHERE task_id = ?', [taskId]);
+    const commentsList = await query('SELECT id FROM comments WHERE post_id = ?', [postId]);
 
-    // Second call should find nothing new to enqueue
-    const result = await onPostReady(taskId, postId);
-    assert.equal(result.enqueued, 0);
-    assert.equal(result.skipped, 0);
+    // First call
+    const { jobs: jobs1 } = buildJobsForPost(
+      taskId,
+      postId,
+      steps.map(s => ({ ...s, stats: typeof s.stats === 'string' ? JSON.parse(s.stats) : s.stats })),
+      strategiesMap,
+      taskTargets,
+      new Set(),
+      commentsList,
+      true,
+      generateId,
+    );
+    assert.equal(jobs1.length, 1);
+    await enqueueJobs(jobs1);
+
+    // Second call with existing targets
+    const existing = new Set((await query('SELECT target_id FROM queue_jobs WHERE task_id = ? AND strategy_id = ?', [taskId, strategyId])).map((r: any) => r.target_id));
+    const { jobs: jobs2 } = buildJobsForPost(
+      taskId,
+      postId,
+      steps.map(s => ({ ...s, stats: typeof s.stats === 'string' ? JSON.parse(s.stats) : s.stats })),
+      strategiesMap,
+      taskTargets,
+      existing,
+      commentsList,
+      true,
+      generateId,
+    );
+    assert.equal(jobs2.length, 0);
   });
 });
