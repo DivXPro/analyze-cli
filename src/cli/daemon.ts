@@ -4,7 +4,8 @@ import * as path from 'path';
 import { fork } from 'child_process';
 import { IPC_SOCKET_PATH } from '../shared/constants';
 import { sendIpcRequest } from '../daemon/ipc-server';
-import { isDaemonRunning, getDaemonPid, cleanupStaleDaemonFiles } from '../shared/daemon-status';
+import { isDaemonRunning, getDaemonPid, getDaemonVersion, cleanupStaleDaemonFiles } from '../shared/daemon-status';
+import { VERSION } from '../shared/version';
 import { getLogFilePath } from '../shared/logger';
 
 export function daemonCommands(program: Command): void {
@@ -105,8 +106,11 @@ export function daemonCommands(program: Command): void {
         console.log(pc.red('Daemon is not running'));
         return;
       }
+      const daemonVersion = getDaemonVersion();
+      const versionMatch = daemonVersion === VERSION;
       console.log(pc.green(`Daemon is running (PID: ${pid})`));
-      console.log(`Socket: ${IPC_SOCKET_PATH}`);
+      console.log(`Version:  ${daemonVersion ?? 'unknown'} ${versionMatch ? pc.green('(matches CLI)') : pc.yellow(`(CLI: ${VERSION})`)}`);
+      console.log(`Socket:   ${IPC_SOCKET_PATH}`);
       console.log(pc.dim(`Log file: ${getLogFilePath()}`));
       try {
         const status = await sendIpcRequest('daemon.status', {}) as Record<string, unknown>;
