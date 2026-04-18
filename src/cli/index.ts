@@ -11,13 +11,14 @@ import { resultCommands, resultMediaCommands } from './result';
 import { strategyCommands } from './strategy';
 import { analyzeCommands } from './analyze';
 import { queueCommands } from './queue';
+import pkg from '../../package.json';
 
 const program = new Command();
 
 program
   .name('analyze-cli')
   .description('AI-powered social media content analysis CLI tool')
-  .version('0.1.3');
+  .version(pkg.version);
 
 // Daemon commands
 daemonCommands(program);
