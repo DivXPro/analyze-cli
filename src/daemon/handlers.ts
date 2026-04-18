@@ -486,6 +486,11 @@ export function getHandlers(): Record<string, Handler> {
         return true;
       });
 
+      if (relevantTargets.length === 0) {
+        await updateTaskStepStatus(stepId, 'skipped', { total: 0, done: 0, failed: 0 });
+        return { status: 'skipped', enqueued: 0 };
+      }
+
       // Filter out targets already enqueued for this step by the stream scheduler
       const { getExistingJobTargets } = await import('../db/queue-jobs');
       const existingTargets = await getExistingJobTargets(taskId, strategy.id);
@@ -497,11 +502,6 @@ export function getHandlers(): Record<string, Handler> {
           await updateTaskStepStatus(stepId, 'running', { total: existingTargets.size, done: 0, failed: 0 });
         }
         return { status: 'running', enqueued: 0 };
-      }
-
-      if (relevantTargets.length === 0) {
-        await updateTaskStepStatus(stepId, 'skipped', { total: 0, done: 0, failed: 0 });
-        return { status: 'skipped', enqueued: 0 };
       }
 
       const jobs = newTargets.map(t => ({
