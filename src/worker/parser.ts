@@ -248,6 +248,37 @@ export function parseStrategyResult(
   return { values, raw: obj };
 }
 
+export function parseBatchStrategyResult(
+  rawText: string,
+  outputSchema: Record<string, unknown>,
+): { values: Record<string, unknown>[]; raw: Record<string, unknown> } {
+  let obj: Record<string, unknown> = {};
+  try {
+    const json = extractJson(rawText);
+    obj = typeof json === 'object' && json !== null ? (json as Record<string, unknown>) : {};
+  } catch {
+    throw new Error(`Invalid JSON in batch response: ${rawText.slice(0, 200)}`);
+  }
+
+  const results = obj.results ?? obj.data ?? obj.items ?? obj;
+  if (!Array.isArray(results)) {
+    throw new Error('Batch response must contain a results array');
+  }
+
+  const properties = (outputSchema.properties || {}) as Record<string, Record<string, unknown>>;
+  const parsed: Record<string, unknown>[] = [];
+
+  for (const item of results) {
+    const row: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(properties)) {
+      row[key] = coerceJsonSchemaValue((item as Record<string, unknown>)?.[key], def);
+    }
+    parsed.push(row);
+  }
+
+  return { values: parsed, raw: obj };
+}
+
 function coerceJsonSchemaValue(value: unknown, def: Record<string, unknown>): unknown {
   if (value === undefined || value === null) {
     if ((def.type as string) === 'array') return [];
