@@ -130,8 +130,9 @@ export function taskCommands(program: Command): void {
     .alias('ls')
     .description('List tasks')
     .option('--status <status>', 'Filter by status')
-    .action(async (opts: { status?: string }) => {
-      const tasks = await daemonCall('task.list', { status: opts.status }) as any[];
+    .option('--query <text>', 'Search by task name')
+    .action(async (opts: { status?: string; query?: string }) => {
+      const tasks = await daemonCall('task.list', { status: opts.status, query: opts.query }) as any[];
       if (tasks.length === 0) {
         console.log(pc.yellow('No tasks found'));
         return;

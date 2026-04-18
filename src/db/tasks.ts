@@ -17,10 +17,13 @@ export async function getTaskById(id: string): Promise<Task | null> {
   return rows[0] ?? null;
 }
 
-export async function listTasks(status?: string): Promise<Task[]> {
-  const sql = status ? 'SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC' : 'SELECT * FROM tasks ORDER BY created_at DESC';
-  const params = status ? [status] : [];
-  return query<Task>(sql, params);
+export async function listTasks(status?: string, queryText?: string): Promise<Task[]> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (status) { conditions.push('status = ?'); params.push(status); }
+  if (queryText) { conditions.push('name ILIKE ?'); params.push(`%${queryText}%`); }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  return query<Task>(`SELECT * FROM tasks ${where} ORDER BY created_at DESC`, params);
 }
 
 export async function updateTaskStatus(id: string, status: string): Promise<void> {

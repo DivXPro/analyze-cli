@@ -573,7 +573,7 @@ export function getHandlers(): Record<string, Handler> {
     },
 
     async 'task.list'(params) {
-      return listTasks(params.status as string | undefined);
+      return listTasks(params.status as string | undefined, params.query as string | undefined);
     },
 
     async 'task.prepareData'(params) {
