@@ -80,7 +80,7 @@ type: tool-use
 | 20 | **reset_queue_jobs** | `analyze-cli queue reset [--task-id {tid}]` | **粗旷工具**：强制重置所有非待处理作业。优先使用 `queue retry`。 |
 | 21 | **pause_task / resume_task / cancel_task** | `analyze-cli task pause|resume|cancel --task-id {tid}` | 控制正在运行的任务。 |
 | 22 | **list_posts / search_posts_db** | `analyze-cli post list [--platform {id}]` / `analyze-cli post search --platform {id} --query {text}` | 浏览已导入的数据。 |
-| 23 | **daemon management** | `analyze-cli daemon start [--fg]` / `stop` / `restart` / `status` | 管理守护进程生命周期。 |
+| 23 | **daemon management** | `analyze-cli daemon start [--fg]` / `stop` / `restart` / `status` | 管理守护进程生命周期。版本不匹配时 CLI 会自动重启守护进程。 |
 
 ### 高级：创建策略
 

@@ -80,7 +80,7 @@ Run these **in order** before any workflow:
 | 20 | **reset_queue_jobs** | `analyze-cli queue reset [--task-id {tid}]` | **Blunt instrument**: force-reset all non-pending jobs. Prefer `queue retry`. |
 | 21 | **pause_task / resume_task / cancel_task** | `analyze-cli task pause|resume|cancel --task-id {tid}` | Control running tasks. |
 | 22 | **list_posts / search_posts_db** | `analyze-cli post list [--platform {id}]` / `analyze-cli post search --platform {id} --query {text}` | Browse imported data. |
-| 23 | **daemon management** | `analyze-cli daemon start [--fg]` / `stop` / `restart` / `status` | Manage daemon lifecycle. |
+| 23 | **daemon management** | `analyze-cli daemon start [--fg]` / `stop` / `restart` / `status` | Manage daemon lifecycle. CLI auto-restarts daemon if version mismatch detected. |
 
 ### Advanced: Create Strategy
 
