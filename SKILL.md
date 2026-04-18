@@ -90,7 +90,22 @@ Run these **in order** before any workflow:
 
 ---
 
+## Execution Modes
+
+Both `task prepare-data` and `task run-all-steps` / `task step run` support two execution modes. Choose based on whether the user wants to wait for completion or move on:
+
+| Mode | Flag | Behavior | Use When |
+|------|------|----------|----------|
+| **Blocking (default)** | `--wait` | Command blocks until completion and prints live progress. Agent sees output and can report results immediately. | **Recommended for interactive workflows.** User wants real-time feedback. |
+| **Non-blocking** | `--no-wait` | Command returns immediately after enqueueing jobs. Agent must check status later. | User wants to fire-and-forget, or is running multiple tasks in parallel. |
+
+> `prepare-task-data` is always blocking (it has no `--no-wait` flag). `run-all-steps` and `step run` default to `--wait`.
+
+---
+
 ## Standard Workflow
+
+Data preparation and analysis are executed **back-to-back** in the standard flow:
 
 ```
 search_posts(query) → add_platform(if new) → create_task(with fetch_note template)
@@ -129,6 +144,22 @@ analyze-cli task run-all-steps --task-id <task_id>
 
 # 7. Results
 analyze-cli task results --task-id <task_id>
+```
+
+### Alternative: Non-blocking Mode
+
+If the user wants to start the analysis and check back later (e.g., running multiple tasks in parallel):
+
+```bash
+# Data preparation still blocks
+analyze-cli task prepare-data --task-id <task_id>
+
+# But analysis runs in background
+analyze-cli task run-all-steps --task-id <task_id> --no-wait
+# → "All steps processed" (returns immediately)
+
+# Check status later
+analyze-cli task status --task-id <task_id>
 ```
 
 ### Recovery from Failure

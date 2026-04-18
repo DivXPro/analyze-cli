@@ -90,7 +90,22 @@ type: tool-use
 
 ---
 
+## 执行模式
+
+`task prepare-data` 和 `task run-all-steps` / `task step run` 都支持两种执行模式。根据用户是否想要等待完成来选择：
+
+| 模式 | 标志 | 行为 | 使用场景 |
+|------|------|------|----------|
+| **阻塞（默认）** | `--wait` | 命令阻塞直到完成，期间打印实时进度。Agent 看到输出后可以立即报告结果。 | **推荐用于交互式工作流。** 用户想要实时反馈。 |
+| **非阻塞** | `--no-wait` | 命令入队后立即返回。Agent 稍后需要手动检查状态。 | 用户想要"触发后不管"，或同时运行多个任务。 |
+
+> `prepare-data` 始终是阻塞的（没有 `--no-wait` 标志）。`run-all-steps` 和 `step run` 默认 `--wait`。
+
+---
+
 ## 标准工作流
+
+数据准备和分析在标准流程中**连续执行**，一气呵成：
 
 ```
 search_posts(query) → add_platform(如为新平台) → create_task(含 fetch_note 模板)
@@ -129,6 +144,22 @@ analyze-cli task run-all-steps --task-id <task_id>
 
 # 7. 查看结果
 analyze-cli task results --task-id <task_id>
+```
+
+### 替代方案：非阻塞模式
+
+如果用户想要启动分析后稍后再检查（例如同时运行多个任务）：
+
+```bash
+# 数据准备仍然是阻塞的
+analyze-cli task prepare-data --task-id <task_id>
+
+# 但分析在后台运行
+analyze-cli task run-all-steps --task-id <task_id> --no-wait
+# → "All steps processed"（立即返回）
+
+# 稍后检查状态
+analyze-cli task status --task-id <task_id>
 ```
 
 ### 从失败中恢复
