@@ -261,6 +261,9 @@ async function processStrategyJob(
         });
         return `[${items.join(',')}]`;
       }
+      if (def?.type === 'object' && val !== null && val !== undefined) {
+        return JSON.stringify(val);
+      }
       return val;
     });
     await insertStrategyResult(strategy.id, {
@@ -298,6 +301,9 @@ async function processStrategyJob(
           return String(v);
         });
         return `[${items.join(',')}]`;
+      }
+      if (def?.type === 'object' && val !== null && val !== undefined) {
+        return JSON.stringify(val);
       }
       return val;
     });
@@ -374,6 +380,9 @@ async function processCommentBatch(
             return String(v);
           });
           return `[${items.join(',')}]`;
+        }
+        if (def?.type === 'object' && val !== null && val !== undefined) {
+          return JSON.stringify(val);
         }
         return val;
       });
