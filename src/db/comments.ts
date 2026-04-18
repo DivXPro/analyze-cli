@@ -37,3 +37,12 @@ export async function countComments(postId?: string): Promise<number> {
   const rows = await query<{ cnt: bigint }>(sql, params);
   return Number(rows[0]?.cnt ?? 0);
 }
+
+export async function listCommentsByIds(ids: string[]): Promise<Comment[]> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  return query<Comment>(
+    `SELECT * FROM comments WHERE id IN (${placeholders})`,
+    ids,
+  );
+}

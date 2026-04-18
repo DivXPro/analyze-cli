@@ -44,6 +44,28 @@ export async function getNextJobs(limit: number): Promise<QueueJob[]> {
   return rows;
 }
 
+export async function lockPendingJobs(
+  taskId: string,
+  strategyId: string,
+  targetIds: string[],
+): Promise<{ id: string; target_id: string }[]> {
+  if (targetIds.length === 0) return [];
+  const placeholders = targetIds.map(() => '?').join(',');
+  const rows = await query<{ id: string; target_id: string }>(
+    `UPDATE queue_jobs
+     SET status = 'processing', attempts = attempts + 1
+     WHERE id IN (
+       SELECT id FROM queue_jobs
+       WHERE task_id = ? AND strategy_id = ? AND target_type = 'comment' AND status = 'pending'
+         AND target_id IN (${placeholders})
+       ORDER BY priority DESC, created_at ASC
+     )
+     RETURNING id, target_id`,
+    [taskId, strategyId, ...targetIds],
+  );
+  return rows;
+}
+
 export async function updateJobStatus(jobId: string, status: string): Promise<void> {
   const processedAt = (status === 'completed' || status === 'failed') ? now() : null;
   await run(`UPDATE queue_jobs SET status = ?, processed_at = ? WHERE id = ?`, [status, processedAt, jobId]);
