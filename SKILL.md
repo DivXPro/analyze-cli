@@ -92,16 +92,30 @@ Enrich posts and download comments/media for all posts bound to a task. Executes
 
 ### 7. run\_task\_step
 
-Run a single task step.
+Run a single task step. **By default, this command blocks until the step completes** and prints live progress every 2 seconds.
 
 - Command: `analyze-cli task step run --task-id {task_id} --step-id {step_id}`
+- **Default behavior** (`--wait`): blocks until the step reaches `completed`, `failed`, or `skipped`, printing progress lines like:
+  ```
+  [10:23:45] Step: sentiment-analysis | running | 15/30 done, 1 failed
+  [10:23:47] Step: sentiment-analysis | running | 28/30 done, 1 failed
+  [10:23:48] Step: sentiment-analysis | completed | 30/30 done, 1 failed
+  ```
+- Use `--no-wait` to return immediately after enqueueing (legacy behavior).
 - When to use: the user wants to execute one specific strategy step.
 
 ### 8. run\_all\_steps
 
-Run all pending/failed steps for a task in order.
+Run all pending/failed steps for a task in order. **By default, this command blocks until all steps complete** and prints aggregate progress.
 
 - Command: `analyze-cli task run-all-steps --task-id {task_id}`
+- **Default behavior** (`--wait`): blocks until every step reaches `completed`, `failed`, or `skipped`, printing progress lines like:
+  ```
+  [10:23:45] Steps progress: 0/2 completed | running: sentiment-analysis
+  [10:24:12] Steps progress: 1/2 completed | running: risk-detection
+  [10:24:45] Steps progress: 2/2 completed
+  ```
+- Use `--no-wait` to return immediately after enqueueing (legacy behavior).
 - When to use: the user wants to start the full analysis pipeline after data preparation.
 
 ### 9. get\_task\_status
@@ -109,8 +123,7 @@ Run all pending/failed steps for a task in order.
 Check the current status of a task, including data-preparation progress and each step's progress.
 
 - Command: `analyze-cli task status --task-id {task_id}`
-- When to use: after starting analysis to monitor progress.
-- Read the `phase` field (`dataPreparation` or `analysis`) and the `phases` object to report progress.
+- When to use: **only when you need a one-off status check** (e.g., investigating an already-running task that was started with `--no-wait`). You do NOT need to poll this when using the default `--wait` mode on `run_task_step` or `run_all_steps`.
 
 ### 10. get\_task\_results
 
@@ -352,13 +365,12 @@ The generated strategy must satisfy the project's `validateStrategyJson` and dat
    - **Important workflow rule**: `opencli xiaohongshu search` returns summary data (title, likes, URL). **Do NOT manually fetch full post details with** **`opencli xiaohongshu note`** **before** **`post import`, and do NOT write scripts to do so.** Instead, ensure `task create` includes a `fetch_note` template; the daemon will automatically enrich posts during `analyze-cli task prepare-data`. This is the only supported way to get `{{content}}` populated for analysis.
 2. Then `analyze-cli task step add` for each strategy they need.
 3. Run `analyze-cli task prepare-data` to fetch comments and media via the opencli templates defined in `task create`.
-4. Run `analyze-cli task run-all-steps` to start the analysis pipeline.
-5. Poll `analyze-cli task status` periodically and report progress:
-   - phase = `dataPreparation`: report `commentsFetched / totalPosts` and `mediaFetched / totalPosts`.
-   - phase = `analysis`: for each running step, report `done / total` from its `stats`.
-   - status = `completed`: proceed to `analyze-cli task results`.
-6. If a step or data-preparation fails, report the error and ask if the user wants to retry.
-   - If the failure is due to API rate limits (429), the worker retries automatically with exponential backoff. You only need to intervene if the step status eventually becomes `failed` after all retries are exhausted.
-   - To recover a failed step safely, use `analyze-cli task step reset --task-id <id> --step-id <id>` followed by `analyze-cli task step run` or `analyze-cli task run-all-steps`.
-   - **Never use direct database access** (e.g., `node -e` scripts opening DuckDB) to fix queue or task state. Always use the CLI commands listed above.
+4. Run `analyze-cli task run-all-steps --task-id {task_id}` to start the analysis pipeline. **This command blocks until all steps finish** and prints live progress, so you do not need to write polling scripts.
+5. After `run-all-steps` returns, check the exit status:
+   - If successful (exit code 0), all steps completed or were skipped. Proceed to `analyze-cli task results`.
+   - If failed (exit code 1), one or more steps failed. Report the error and ask if the user wants to retry.
+     - If the failure is due to API rate limits (429), the worker retries automatically with exponential backoff. You only need to intervene if the step status eventually becomes `failed` after all retries are exhausted.
+     - To recover a failed step safely, use `analyze-cli task step reset --task-id <id> --step-id <id>` followed by `analyze-cli task step run --task-id <id> --step-id <id>`.
+6. If you ever need a one-off status check (e.g., a task started with `--no-wait` by another process), use `analyze-cli task status --task-id {task_id}`.
+7. **Never write temporary polling scripts** that loop calling `analyze-cli task status`. Use the built-in `--wait` mode instead. **Never use direct database access** (e.g., `node -e` scripts opening DuckDB) to fix queue or task state. Always use the CLI commands listed above.
 

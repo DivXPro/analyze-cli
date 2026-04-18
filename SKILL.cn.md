@@ -82,20 +82,36 @@ type: tool-use
 - `prepare-data` 在 `cli_templates` 缺少 `fetch_note` 时会报错终止。`fetch_comments` 和 `fetch_media` 为可选项。
 
 ### 7. run_task_step
-运行单个任务步骤。
+运行单个任务步骤。**默认情况下，此命令会阻塞直到步骤完成**，并每 2 秒打印实时进度。
+
 - 命令：`analyze-cli task step run --task-id {task_id} --step-id {step_id}`
+- **默认行为**（`--wait`）：阻塞直到步骤达到 `completed`、`failed` 或 `skipped` 状态，期间输出进度行：
+  ```
+  [10:23:45] Step: sentiment-analysis | running | 15/30 done, 1 failed
+  [10:23:47] Step: sentiment-analysis | running | 28/30 done, 1 failed
+  [10:23:48] Step: sentiment-analysis | completed | 30/30 done, 1 failed
+  ```
+- 使用 `--no-wait` 可在入队后立即返回（旧版行为）。
 - 使用场景：用户想要执行一个特定的策略步骤。
 
 ### 8. run_all_steps
-按顺序运行任务的所有待处理/失败步骤。
+按顺序运行任务的所有待处理/失败步骤。**默认情况下，此命令会阻塞直到所有步骤完成**，并打印总体进度。
+
 - 命令：`analyze-cli task run-all-steps --task-id {task_id}`
+- **默认行为**（`--wait`）：阻塞直到所有步骤达到 `completed`、`failed` 或 `skipped` 状态，期间输出进度行：
+  ```
+  [10:23:45] Steps progress: 0/2 completed | running: sentiment-analysis
+  [10:24:12] Steps progress: 1/2 completed | running: risk-detection
+  [10:24:45] Steps progress: 2/2 completed
+  ```
+- 使用 `--no-wait` 可在入队后立即返回（旧版行为）。
 - 使用场景：用户想要在数据准备完成后启动完整的分析流程。
 
 ### 9. get_task_status
 检查任务的当前状态，包括数据准备进度和每个步骤的进度。
+
 - 命令：`analyze-cli task status --task-id {task_id}`
-- 使用场景：开始分析后监控进度。
-- 阅读 `phase` 字段（`dataPreparation` 或 `analysis`）和 `phases` 对象来报告进度。
+- 使用场景：**仅在需要一次性状态检查时使用**（例如查看另一个进程以 `--no-wait` 启动的任务）。使用默认 `--wait` 模式时**不需要**轮询此命令。
 
 ### 10. get_task_results
 显示已完成任务的分析结果。
@@ -288,12 +304,11 @@ type: tool-use
    - **注意**：`opencli xiaohongshu search` 返回摘要数据（标题、点赞数、URL）。如果策略需要完整的帖子内容（`{{content}}`），可能需要先用 `opencli xiaohongshu note {url} -f json` 丰富数据，然后再执行 `post import`。
 2. 然后对每个需要的策略执行 `analyze-cli task step add`。
 3. 运行 `analyze-cli task prepare-data` 通过 `task create` 中定义的 opencli 模板获取评论和媒体。
-4. 运行 `analyze-cli task run-all-steps` 启动分析流程。
-5. 定期轮询 `analyze-cli task status` 并报告进度：
-   - phase = `dataPreparation`：报告 `commentsFetched / totalPosts` 和 `mediaFetched / totalPosts`。
-   - phase = `analysis`：对每个运行中的步骤，从其 `stats` 报告 `done / total`。
-   - status = `completed`：继续执行 `analyze-cli task results`。
-6. 如果某个步骤或数据准备失败，报告错误并询问用户是否要重试。
-   - 如果失败是由于 API 速率限制（429），工作进程会使用指数退避自动重试。只有当步骤状态在所有重试耗尽后变为 `failed` 时，你才需要介入。
-   - 要安全地恢复失败的步骤，先使用 `analyze-cli task step reset --task-id <id> --step-id <id>`，然后使用 `analyze-cli task step run` 或 `analyze-cli task run-all-steps`。
-   - **永远不要使用直接数据库访问**（例如运行打开 DuckDB 的 `node -e` 脚本）来修复队列或任务状态。始终使用上面列出的 CLI 命令。
+4. 运行 `analyze-cli task run-all-steps --task-id {task_id}` 启动分析流程。**此命令会阻塞直到所有步骤完成**并打印实时进度，因此你不需要编写轮询脚本。
+5. `run-all-steps` 返回后，检查退出状态：
+   - 如果成功（退出码 0），所有步骤已完成或被跳过。继续执行 `analyze-cli task results`。
+   - 如果失败（退出码 1），一个或多个步骤失败。报告错误并询问用户是否要重试。
+     - 如果失败是由于 API 速率限制（429），工作进程会自动使用指数退避重试。只有当步骤状态在所有重试耗尽后变为 `failed` 时，你才需要介入。
+     - 要安全地恢复失败的步骤，先使用 `analyze-cli task step reset --task-id <id> --step-id <id>`，然后使用 `analyze-cli task step run --task-id <id> --step-id <id>`。
+6. 如果只需要一次性状态检查（例如查看另一个进程以 `--no-wait` 启动的任务），使用 `analyze-cli task status --task-id {task_id}`。
+7. **永远不要编写临时轮询脚本**来循环调用 `analyze-cli task status`。请使用内置的 `--wait` 模式。**永远不要使用直接数据库访问**（例如运行打开 DuckDB 的 `node -e` 脚本）来修复队列或任务状态。始终使用上面列出的 CLI 命令。
