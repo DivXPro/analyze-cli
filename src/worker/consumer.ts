@@ -13,16 +13,20 @@ import { analyzeComment, analyzeMedia, analyzeWithStrategy } from './anthropic';
 import { parseCommentResult, parseMediaResult, parseStrategyResult } from './parser';
 import { QueueJob } from '../shared/types';
 import { sleep } from '../shared/utils';
+import { waitForJob } from '../shared/job-events';
 import { config } from '../config';
 
 const POLL_INTERVAL_MS = 2000;
+const MAX_WAIT_MS = 30000;
+const EXPONENTIAL_BACKOFF_FACTOR = 2;
 
 export async function runConsumer(workerId: number): Promise<void> {
   const concurrency = config.worker.concurrency ?? 1;
-  console.log(`[Worker-${workerId}] Consumer started, concurrency=${concurrency}, polling every ${POLL_INTERVAL_MS}ms`);
+  console.log(`[Worker-${workerId}] Consumer started, concurrency=${concurrency}`);
 
   const active = new Set<Promise<void>>();
   let buffer: QueueJob[] = [];
+  let currentWaitMs = POLL_INTERVAL_MS;
 
   while (true) {
     try {
@@ -32,6 +36,7 @@ export async function runConsumer(workerId: number): Promise<void> {
         const jobs = await getNextJobs(need);
         if (jobs.length === 0) break;
         buffer.push(...jobs);
+        currentWaitMs = POLL_INTERVAL_MS;
       }
 
       // Start new jobs until we hit the concurrency limit
@@ -45,12 +50,20 @@ export async function runConsumer(workerId: number): Promise<void> {
 
       if (active.size > 0) {
         await Promise.race(active);
+        continue;
+      }
+
+      // Nothing active and nothing in buffer → wait for notification or timeout
+      const gotNotify = await waitForJob(currentWaitMs);
+      if (gotNotify) {
+        currentWaitMs = POLL_INTERVAL_MS;
       } else {
-        await sleep(POLL_INTERVAL_MS);
+        currentWaitMs = Math.min(currentWaitMs * EXPONENTIAL_BACKOFF_FACTOR, MAX_WAIT_MS);
       }
     } catch (err) {
       console.error(`[Worker-${workerId}] Error in consumer loop:`, err);
       await sleep(POLL_INTERVAL_MS);
+      currentWaitMs = POLL_INTERVAL_MS;
     }
   }
 }

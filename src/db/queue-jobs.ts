@@ -1,6 +1,7 @@
 import { query, run } from './client';
 import { QueueJob } from '../shared/types';
 import { now } from '../shared/utils';
+import { notifyJobAvailable } from '../shared/job-events';
 
 export async function enqueueJob(job: QueueJob): Promise<void> {
   await run(
@@ -11,9 +12,11 @@ export async function enqueueJob(job: QueueJob): Promise<void> {
 }
 
 export async function enqueueJobs(jobs: QueueJob[]): Promise<void> {
+  if (jobs.length === 0) return;
   for (const job of jobs) {
     await enqueueJob(job);
   }
+  notifyJobAvailable();
 }
 
 export async function getNextJob(): Promise<QueueJob | null> {
@@ -130,7 +133,9 @@ export async function syncWaitingMediaJobs(taskId: string, postId: string): Prom
     `SELECT COUNT(*) as cnt FROM queue_jobs WHERE task_id = ? AND target_id = ? AND status = 'pending'`,
     [taskId, postId]
   );
-  return Number(rows[0]?.cnt ?? 0);
+  const count = Number(rows[0]?.cnt ?? 0);
+  if (count > 0) notifyJobAvailable();
+  return count;
 }
 
 export async function getExistingJobTargets(
