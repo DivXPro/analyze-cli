@@ -20,7 +20,8 @@ export function strategyCommands(program: Command): void {
         console.log(pc.bold('\nStrategies:'));
         console.log(pc.dim('─'.repeat(80)));
         for (const s of strategies) {
-          console.log(`  ${pc.green(s.id)} ${pc.bold(s.name)} [${s.target}] v${s.version}`);
+          const batchInfo = s.batch_config?.enabled ? pc.yellow(` batch=${s.batch_config.size}`) : '';
+          console.log(`  ${pc.green(s.id)} ${pc.bold(s.name)} [${s.target}] v${s.version}${batchInfo}`);
         }
         console.log(pc.dim('─'.repeat(80)));
         console.log(`\nTotal: ${strategies.length}`);

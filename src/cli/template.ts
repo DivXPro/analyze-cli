@@ -27,6 +27,29 @@ export function templateCommands(program: Command): void {
     });
 
   template
+    .command('show')
+    .description('Show template details')
+    .requiredOption('--id <id>', 'Template ID')
+    .action(async (opts: { id: string }) => {
+      try {
+        const t = await daemonCall('template.get', { id: opts.id }) as any;
+        if (!t || !t.id) {
+          console.log(pc.red(`Template not found: ${opts.id}`));
+          process.exit(1);
+        }
+        console.log(pc.bold(`\nTemplate: ${t.name}`));
+        console.log(`  ID:       ${t.id}`);
+        if (t.description) console.log(`  Desc:     ${t.description}`);
+        console.log(`  Default:  ${t.is_default ? pc.green('yes') : 'no'}`);
+        console.log(`\n  Content:\n${pc.dim(t.template)}`);
+        console.log();
+      } catch (err: unknown) {
+        console.log(pc.red(`Error: ${(err as Error).message}`));
+        process.exit(1);
+      }
+    });
+
+  template
     .command('add')
     .description('Add a new prompt template')
     .requiredOption('--name <name>', 'Template name')
