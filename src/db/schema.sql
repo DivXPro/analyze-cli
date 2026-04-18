@@ -168,9 +168,6 @@ CREATE TABLE IF NOT EXISTS queue_jobs (
     processed_at    TIMESTAMP
 );
 
--- Migration: add strategy_id to queue_jobs (2026-04-18)
-ALTER TABLE queue_jobs ADD COLUMN IF NOT EXISTS strategy_id TEXT REFERENCES strategies(id);
-
 CREATE TABLE IF NOT EXISTS task_post_status (
   task_id         TEXT NOT NULL REFERENCES tasks(id),
   post_id         TEXT NOT NULL,
