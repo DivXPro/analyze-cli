@@ -486,12 +486,25 @@ export function getHandlers(): Record<string, Handler> {
         return true;
       });
 
+      // Filter out targets already enqueued for this step by the stream scheduler
+      const { getExistingJobTargets } = await import('../db/queue-jobs');
+      const existingTargets = await getExistingJobTargets(taskId, strategy.id);
+      const newTargets = relevantTargets.filter(t => !existingTargets.has(t.target_id));
+
+      if (newTargets.length === 0) {
+        // All targets already enqueued; ensure step is marked running
+        if (step.status === 'pending') {
+          await updateTaskStepStatus(stepId, 'running', { total: existingTargets.size, done: 0, failed: 0 });
+        }
+        return { status: 'running', enqueued: 0 };
+      }
+
       if (relevantTargets.length === 0) {
         await updateTaskStepStatus(stepId, 'skipped', { total: 0, done: 0, failed: 0 });
         return { status: 'skipped', enqueued: 0 };
       }
 
-      const jobs = relevantTargets.map(t => ({
+      const jobs = newTargets.map(t => ({
         id: generateId(),
         task_id: taskId,
         strategy_id: strategy.id,
@@ -507,7 +520,7 @@ export function getHandlers(): Record<string, Handler> {
       }));
 
       await enqueueJobs(jobs);
-      await updateTaskStepStatus(stepId, 'running', { total: jobs.length, done: 0, failed: 0 });
+      await updateTaskStepStatus(stepId, 'running', { total: newTargets.length, done: 0, failed: 0 });
 
       return { status: 'running', enqueued: jobs.length };
     },
