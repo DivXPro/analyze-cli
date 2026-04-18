@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import * as pc from 'picocolors';
-import { generateId } from '../shared/utils';
+import { generateId, formatTimestamp, waitForTaskStep, waitForTaskSteps } from '../shared/utils';
 import { daemonCall } from './ipc-client';
 
 export function taskCommands(program: Command): void {
@@ -252,14 +252,54 @@ export function taskCommands(program: Command): void {
     .description('Run a specific task step')
     .requiredOption('--task-id <id>', 'Task ID')
     .requiredOption('--step-id <id>', 'Step ID')
-    .action(async (opts: { taskId: string; stepId: string }) => {
+    .option('--wait', 'Block until step completes (default: true)')
+    .option('--no-wait', 'Return immediately after enqueueing')
+    .action(async (opts: { taskId: string; stepId: string; wait: boolean }) => {
       const result = await daemonCall('task.step.run', {
         task_id: opts.taskId,
         step_id: opts.stepId,
       }) as { enqueued: number; status: string };
-      console.log(pc.green(`Step status: ${result.status}`));
-      if (result.enqueued > 0) {
-        console.log(`  Enqueued ${result.enqueued} jobs`);
+
+      if (!opts.wait) {
+        console.log(pc.green(`Step status: ${result.status}`));
+        if (result.enqueued > 0) {
+          console.log(`  Enqueued ${result.enqueued} jobs`);
+        }
+        return;
+      }
+
+      // Already completed or skipped
+      if (result.status === 'completed' || result.status === 'skipped') {
+        console.log(pc.green(`Step already ${result.status}`));
+        return;
+      }
+
+      console.log(pc.yellow('Step started. Waiting for completion...\n'));
+
+      try {
+        const final = await waitForTaskStep(
+          opts.taskId,
+          opts.stepId,
+          (id) => daemonCall('task.status', { task_id: id }) as Promise<Record<string, any>>,
+          (p) => {
+            const ts = formatTimestamp();
+            const stats = p.stats ? `${p.stats.done ?? 0}/${p.stats.total ?? 0} done, ${p.stats.failed ?? 0} failed` : '';
+            console.log(`[${ts}] Step: ${p.name} | ${p.status} | ${stats}`);
+          },
+        );
+
+        console.log();
+        if (final.status === 'completed') {
+          console.log(pc.green(`Step completed: ${final.name}`));
+        } else if (final.status === 'failed') {
+          console.log(pc.red(`Step failed: ${final.name}`));
+          process.exit(1);
+        } else {
+          console.log(pc.yellow(`Step ${final.status}: ${final.name}`));
+        }
+      } catch (err) {
+        console.error(pc.red(`Error waiting for step: ${(err as Error).message}`));
+        process.exit(1);
       }
     });
 
@@ -285,16 +325,51 @@ export function taskCommands(program: Command): void {
     .command('run-all-steps')
     .description('Run all pending/failed steps for a task in order')
     .requiredOption('--task-id <id>', 'Task ID')
-    .action(async (opts: { taskId: string }) => {
+    .option('--wait', 'Block until all steps complete (default: true)')
+    .option('--no-wait', 'Return immediately after enqueueing')
+    .action(async (opts: { taskId: string; wait: boolean }) => {
       const result = await daemonCall('task.runAllSteps', { task_id: opts.taskId }) as {
         completed: number;
         failed: number;
         skipped: number;
       };
-      console.log(pc.green('All steps processed'));
-      console.log(`  Completed: ${result.completed}`);
-      console.log(`  Failed:    ${result.failed}`);
-      console.log(`  Skipped:   ${result.skipped}`);
+
+      if (!opts.wait) {
+        console.log(pc.green('All steps processed'));
+        console.log(`  Completed: ${result.completed}`);
+        console.log(`  Failed:    ${result.failed}`);
+        console.log(`  Skipped:   ${result.skipped}`);
+        return;
+      }
+
+      console.log(pc.yellow('Steps started. Waiting for completion...\n'));
+
+      try {
+        const final = await waitForTaskSteps(
+          opts.taskId,
+          (id) => daemonCall('task.status', { task_id: id }) as Promise<Record<string, any>>,
+          (completed, total, running) => {
+            const ts = formatTimestamp();
+            const progress = total > 0 ? `${completed}/${total}` : '0/0';
+            const runningText = running ? ` | running: ${running}` : '';
+            console.log(`[${ts}] Steps progress: ${progress} completed${runningText}`);
+          },
+        );
+
+        console.log();
+        console.log(pc.green('All steps complete'));
+        console.log(`  Completed: ${final.completed}`);
+        console.log(`  Failed:    ${final.failed}`);
+        console.log(`  Skipped:   ${final.skipped}`);
+        console.log(`  Total:     ${final.total}`);
+
+        if (final.failed > 0) {
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(pc.red(`Error waiting for steps: ${(err as Error).message}`));
+        process.exit(1);
+      }
     });
 
   task
