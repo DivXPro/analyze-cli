@@ -15,6 +15,7 @@
 - `2026-04-16-agent-skill-atomic-tasks-design.md`
 - `2026-04-16-auto-strategy-generation-design.md`
 - `2026-04-18-streaming-analysis-design.md` — 流式分析：帖子数据就绪后立即触发分析，数据准备与分析并行执行
+- `2026-04-19-e2e-test-suite-design.md` — E2E 测试套件设计：完整用户工作流的真实链路测试
 
 ## 如何使用
 
