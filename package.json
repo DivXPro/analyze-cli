@@ -14,10 +14,13 @@
   "scripts": {
     "build": "tsup src/cli/index.ts src/daemon/index.ts src/daemon/stream-scheduler.ts --format cjs --out-dir dist --external duckdb --minify",
     "dev": "tsup src/cli/index.ts src/daemon/index.ts --format cjs --out-dir dist --external duckdb --watch",
-    "test": "node --test --test-concurrency=1 --experimental-strip-types 'test/*.test.ts'",
-    "test:offline": "node --test --experimental-strip-types 'test/opencli.test.ts' 'test/import-offline.test.ts' 'test/prepare-data-offline.test.ts'",
-    "test:integration": "node --test --experimental-strip-types 'test/task-post-status.test.ts' 'test/prepare-data.test.ts'",
-    "test:xhs": "node --test --experimental-strip-types 'test/xhs-shanghai-food.test.ts'",
+    "test": "node --test --test-concurrency=1 --experimental-strip-types 'test/**/*.test.ts'",
+    "test:integration": "node --test --test-concurrency=1 --experimental-strip-types 'test/integration/*.test.ts'",
+    "test:e2e": "node --test --test-concurrency=1 --experimental-strip-types 'test/e2e/**/*.test.ts'",
+    "test:e2e:import": "node --test --test-concurrency=1 --experimental-strip-types 'test/e2e/import-and-prepare/*.test.ts'",
+    "test:e2e:strategy": "node --test --test-concurrency=1 --experimental-strip-types 'test/e2e/strategy-workflow/*.test.ts'",
+    "test:e2e:queue": "node --test --test-concurrency=1 --experimental-strip-types 'test/e2e/queue-recovery/*.test.ts'",
+    "test:e2e:daemon": "node --test --test-concurrency=1 --experimental-strip-types 'test/e2e/daemon-lifecycle/*.test.ts'",
     "test:record": "npx tsx scripts/record-e2e-fixture.ts --platform xhs --query '上海美食' --limit 2 --output test-data/recorded/$(date +%Y-%m-%d)-xhs-shanghai",
     "prepublishOnly": "npm run build"
   },
