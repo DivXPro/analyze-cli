@@ -16,6 +16,7 @@
 - `2026-04-16-auto-strategy-generation-design.md`
 - `2026-04-18-streaming-analysis-design.md` — 流式分析：帖子数据就绪后立即触发分析，数据准备与分析并行执行
 - `2026-04-19-e2e-test-suite-design.md` — E2E 测试套件设计：完整用户工作流的真实链路测试
+- `2026-04-20-strategy-aggregation-design.md` — 策略结果聚合查询：自动识别并展开 Array/JSON 字段，支持跨帖子聚合分析
 
 ## 如何使用
 
