@@ -163,21 +163,75 @@ describe('task-post-status — real DB (integration)', { timeout: 15000 }, () =>
   });
 
   it('should handle partial fetch correctly in getPendingPostIds', async () => {
-    // Set post2 with comments fetched but media not fetched
-    await upsertTaskPostStatus(TEST_TASK_ID, TEST_POST_2, { comments_fetched: true, media_fetched: false });
+    // Set post2 as fetching with comments fetched but media not fetched
+    await upsertTaskPostStatus(TEST_TASK_ID, TEST_POST_2, { comments_fetched: true, media_fetched: false, status: 'fetching' });
     const pending = await getPendingPostIds(TEST_TASK_ID);
     const postIds = pending.map(p => p.post_id);
     assert.ok(postIds.includes(TEST_POST_2), 'post2 should still be pending (media not fetched)');
 
-    // Now mark media as fetched too
-    await upsertTaskPostStatus(TEST_TASK_ID, TEST_POST_2, { media_fetched: true });
+    // Now mark media as fetched and status done
+    await upsertTaskPostStatus(TEST_TASK_ID, TEST_POST_2, { media_fetched: true, status: 'done' });
     const pending2 = await getPendingPostIds(TEST_TASK_ID);
     const postIds2 = pending2.map(p => p.post_id);
-    assert.ok(!postIds2.includes(TEST_POST_2), 'post2 should not be pending after both fetched');
+    assert.ok(!postIds2.includes(TEST_POST_2), 'post2 should not be pending after done');
   });
 
   it('should return null for non-existent post status', async () => {
     const status = await getTaskPostStatus(TEST_TASK_ID, 'non_existent_post');
     assert.equal(status, null);
+  });
+
+  it('should exclude failed posts from getPendingPostIds', async () => {
+    const uniquePost = `${RUN_ID}_failed_post`;
+    await createPost({
+      platform_id: TEST_PLATFORM,
+      platform_post_id: uniquePost,
+      title: 'Failed Post',
+      content: 'Test content',
+      author_id: null, author_name: 'Test Author', author_url: null,
+      url: null, cover_url: null, post_type: 'text',
+      like_count: 0, collect_count: 0, comment_count: 0,
+      share_count: 0, play_count: 0, score: null,
+      tags: null, media_files: null, published_at: null,
+      metadata: null,
+    });
+    await createTaskTarget(TEST_TASK_ID, 'post', uniquePost);
+    await upsertTaskPostStatus(TEST_TASK_ID, uniquePost, { status: 'failed', error: 'some error' });
+
+    const pending = await getPendingPostIds(TEST_TASK_ID);
+    const postIds = pending.map(p => p.post_id);
+    assert.ok(!postIds.includes(uniquePost), 'failed post should not be in pending list');
+  });
+
+  it('should preserve error field when not explicitly cleared', async () => {
+    const uniquePost = `${RUN_ID}_preserve_post`;
+    await createPost({
+      platform_id: TEST_PLATFORM,
+      platform_post_id: uniquePost,
+      title: 'Preserve Post',
+      content: 'Test content',
+      author_id: null, author_name: 'Test Author', author_url: null,
+      url: null, cover_url: null, post_type: 'text',
+      like_count: 0, collect_count: 0, comment_count: 0,
+      share_count: 0, play_count: 0, score: null,
+      tags: null, media_files: null, published_at: null,
+      metadata: null,
+    });
+    await createTaskTarget(TEST_TASK_ID, 'post', uniquePost);
+
+    // Set an error
+    await upsertTaskPostStatus(TEST_TASK_ID, uniquePost, { status: 'failed', error: 'connection timeout' });
+    let status = await getTaskPostStatus(TEST_TASK_ID, uniquePost);
+    assert.equal(status?.error, 'connection timeout');
+
+    // Update status without specifying error — should preserve existing error via COALESCE
+    await upsertTaskPostStatus(TEST_TASK_ID, uniquePost, { status: 'fetching' });
+    status = await getTaskPostStatus(TEST_TASK_ID, uniquePost);
+    assert.equal(status?.error, 'connection timeout', 'error should be preserved when not explicitly cleared');
+
+    // Explicitly clear error
+    await upsertTaskPostStatus(TEST_TASK_ID, uniquePost, { status: 'done', error: null });
+    status = await getTaskPostStatus(TEST_TASK_ID, uniquePost);
+    assert.equal(status?.error, null, 'error should be cleared when explicitly set to null');
   });
 });

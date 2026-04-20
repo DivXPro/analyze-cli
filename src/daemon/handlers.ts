@@ -413,7 +413,7 @@ export function getHandlers(): Record<string, Handler> {
         dataPrepStatus = 'failed';
       } else if (postStatuses.some(p => p.status === 'fetching')) {
         dataPrepStatus = 'fetching';
-      } else if (postStatuses.some(p => !p.comments_fetched || !p.media_fetched)) {
+      } else if (postStatuses.some(p => p.status === 'pending' || p.status === 'failed')) {
         dataPrepStatus = 'pending';
       }
 
@@ -1262,13 +1262,12 @@ async function runPrepareDataAsync(
 
     try {
       const postMeta = await getPostById(postId);
-      const noteId = (postMeta?.metadata as Record<string, unknown> | null)?.note_id as string | undefined
-        ?? postMeta?.url
-        ?? undefined;
+      const noteId = (postMeta?.metadata as Record<string, unknown> | null)?.note_id as string | undefined;
+      const postUrl = postMeta?.url ?? undefined;
       const fetchVars: Record<string, string> = {
         post_id: postId,
-        note_id: noteId ?? postId,
-        url: postMeta?.url ?? noteId ?? postId,
+        note_id: noteId ?? postUrl ?? postId,
+        url: postUrl ?? noteId ?? postId,
         limit: '100',
         download_dir: config.paths.download_dir,
       };
@@ -1276,7 +1275,12 @@ async function runPrepareDataAsync(
       // Step 1: fetch_note — enrich post details (content, full stats, tags, etc.)
       try {
         const noteResult = await fetchViaOpencli(cliTemplates.fetch_note, fetchVars);
-        if (noteResult.success && noteResult.data && noteResult.data.length > 0) {
+        if (!noteResult.success) {
+          logger.error(`[prepare-data] fetch_note failed for post ${postId}: ${noteResult.error ?? 'unknown'}`);
+          await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: noteResult.error ?? 'fetch_note failed' });
+          continue;
+        }
+        if (noteResult.data && noteResult.data.length > 0) {
           const noteData = normalizeFieldValueArray(noteResult.data[0]) as RawPostItem;
           await run(
             `UPDATE posts SET
@@ -1327,28 +1331,40 @@ async function runPrepareDataAsync(
       }
 
       // Step 2: fetch_comments
-      if (!item.comments_fetched && cliTemplates.fetch_comments) {
-        await upsertTaskPostStatus(taskId, postId, { status: 'fetching' });
-        const result = await fetchViaOpencli(cliTemplates.fetch_comments, fetchVars);
-        if (!result.success) {
-          await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: result.error ?? 'unknown' });
-          continue;
+      if (cliTemplates.fetch_comments) {
+        if (!item.comments_fetched) {
+          await upsertTaskPostStatus(taskId, postId, { status: 'fetching' });
+          const result = await fetchViaOpencli(cliTemplates.fetch_comments, fetchVars);
+          if (!result.success) {
+            logger.error(`[prepare-data] fetch_comments failed for post ${postId}: ${result.error ?? 'unknown'}`);
+            await upsertTaskPostStatus(taskId, postId, { error: result.error ?? 'fetch_comments failed' });
+          } else {
+            const commentCount = await importCommentsToDb(result.data ?? [], postId, platformId);
+            await upsertTaskPostStatus(taskId, postId, { comments_fetched: true, comments_count: commentCount });
+          }
         }
-        const commentCount = await importCommentsToDb(result.data ?? [], postId, platformId);
-        await upsertTaskPostStatus(taskId, postId, { comments_fetched: true, comments_count: commentCount });
+      } else {
+        // No fetch_comments template configured — mark as done for this step
+        await upsertTaskPostStatus(taskId, postId, { comments_fetched: true });
       }
 
       // Step 3: fetch_media
-      if (!item.media_fetched && cliTemplates.fetch_media) {
-        const result = await fetchViaOpencli(cliTemplates.fetch_media, fetchVars);
-        if (!result.success) {
-          await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: result.error ?? 'unknown' });
-          continue;
+      if (cliTemplates.fetch_media) {
+        if (!item.media_fetched) {
+          const result = await fetchViaOpencli(cliTemplates.fetch_media, fetchVars);
+          if (!result.success) {
+            logger.error(`[prepare-data] fetch_media failed for post ${postId}: ${result.error ?? 'unknown'}`);
+            await upsertTaskPostStatus(taskId, postId, { error: result.error ?? 'fetch_media failed' });
+          } else {
+            const mediaCount = await importMediaToDb(result.data ?? [], postId, platformId, noteId);
+            await upsertTaskPostStatus(taskId, postId, { media_fetched: true, media_count: mediaCount });
+            await createMediaQueueJobs(taskId, postId, mediaCount);
+            await syncWaitingMediaJobs(taskId, postId);
+          }
         }
-        const mediaCount = await importMediaToDb(result.data ?? [], postId, platformId, noteId);
-        await upsertTaskPostStatus(taskId, postId, { media_fetched: true, media_count: mediaCount });
-        await createMediaQueueJobs(taskId, postId, mediaCount);
-        await syncWaitingMediaJobs(taskId, postId);
+      } else {
+        // No fetch_media template configured — mark as done for this step
+        await upsertTaskPostStatus(taskId, postId, { media_fetched: true });
       }
 
       await upsertTaskPostStatus(taskId, postId, { status: 'done' });

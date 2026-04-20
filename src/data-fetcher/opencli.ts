@@ -48,7 +48,10 @@ export async function fetchViaOpencli(
 
     const trimmed = stdout.trim();
     if (!trimmed) {
-      // stderr may contain warnings but no stdout = empty result
+      const errOut = stderr.trim();
+      if (errOut) {
+        return { success: false, error: errOut };
+      }
       return { success: true, data: [] };
     }
 

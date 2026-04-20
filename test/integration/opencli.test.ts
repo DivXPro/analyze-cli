@@ -54,6 +54,21 @@ describe('opencli — template substitution (unit)', () => {
     assert.deepEqual(result.data, []);
   });
 
+  it('should treat empty stdout with stderr as failure', async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    const tmpFile = path.join(os.tmpdir(), `opencli-test-${Date.now()}.js`);
+    fs.writeFileSync(tmpFile, `process.stderr.write('error msg');`);
+    try {
+      const result = await fetchViaOpencli(`node ${tmpFile}`, {}, 5000);
+      assert.equal(result.success, false);
+      assert.ok(result.error?.includes('error msg'));
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
   it('should handle command failure', async () => {
     const result = await fetchViaOpencli('false', {}, 5000);
     assert.equal(result.success, false);
