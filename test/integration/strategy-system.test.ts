@@ -104,6 +104,12 @@ describe('strategy system', { timeout: 15000 }, () => {
     assert.equal(found.name, 'Test Strategy');
     assert.deepEqual(found.needs_media, { enabled: false });
     assert.deepEqual(found.output_schema, { type: 'object', properties: {} });
+
+    // Result table should be auto-created
+    const tables = await query(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'analysis_results_strategy_test-strategy-1'"
+    );
+    assert.strictEqual(tables.length, 1, 'strategy result table should be auto-created');
   });
 
   it('should validate strategy JSON', () => {

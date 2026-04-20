@@ -144,12 +144,12 @@ if (require.main === module) {
   });
   process.on('uncaughtException', (err) => {
     const logger = getLogger();
-    logger.error('[Daemon] Uncaught exception:', err);
+    logger.error(`[Daemon] Uncaught exception: ${err instanceof Error ? err.message : String(err)}`);
     void daemon.stop().finally(() => process.exit(1));
   });
   process.on('unhandledRejection', (reason) => {
     const logger = getLogger();
-    logger.error('[Daemon] Unhandled rejection:', reason);
+    logger.error(`[Daemon] Unhandled rejection: ${String(reason)}`);
     void daemon.stop().finally(() => process.exit(1));
   });
 

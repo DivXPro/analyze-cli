@@ -1321,7 +1321,7 @@ async function runPrepareDataAsync(
           );
         }
       } catch (err) {
-        logger.error(`[prepare-data] fetch_note failed for post ${postId}:`, err);
+        logger.error(`[prepare-data] fetch_note failed for post ${postId}: ${err instanceof Error ? err.message : String(err)}`);
         await upsertTaskPostStatus(taskId, postId, { status: 'failed', error: `fetch_note: ${err}` });
         continue;
       }
@@ -1418,7 +1418,7 @@ async function runPrepareDataAsync(
         }
       } catch (schedErr: unknown) {
         const msg = schedErr instanceof Error ? schedErr.message : String(schedErr);
-        logger.error(`[stream-scheduler] Failed to enqueue for post ${postId}:`, msg);
+        logger.error(`[stream-scheduler] Failed to enqueue for post ${postId}: ${msg}`);
         // Non-fatal: data preparation continues regardless
       }
     } catch (err: unknown) {
