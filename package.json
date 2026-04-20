@@ -1,14 +1,16 @@
 {
   "name": "analyze-cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "AI-powered social media content analysis CLI tool",
   "main": "dist/cli/index.js",
   "bin": {
-    "analyze-cli": "./bin/analyze-cli.js"
+    "analyze-cli": "./bin/analyze-cli.js",
+    "skill": "./bin/skill.js"
   },
   "files": [
     "bin/",
     "dist/",
+    "SKILL.md",
     "src/db/schema.sql"
   ],
   "scripts": {
