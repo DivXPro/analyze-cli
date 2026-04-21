@@ -24,7 +24,7 @@ import * as taskPostStatus from '../../packages/core/dist/db/task-post-status.js
 const { upsertTaskPostStatus } = taskPostStatus;
 import * as utils from '../../packages/core/dist/shared/utils.js';
 const { generateId, now } = utils;
-import * as streamScheduler from '../../src/daemon/stream-scheduler.ts';
+import * as streamScheduler from '../../packages/api/src/daemon/scheduler.ts';
 const { buildJobsForPost } = streamScheduler;
 import { enqueueJobs } from '../../packages/core/dist/db/queue-jobs.js';
 

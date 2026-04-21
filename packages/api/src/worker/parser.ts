@@ -1,7 +1,7 @@
-import {
+import type {
   SentimentLabel, CommentIntent, RiskLevel, MediaContentType,
   TopicTag, EmotionTag, DetectedObject, DetectedLogo, DetectedFace,
-} from '@analyze-cli/core'types';
+} from '@analyze-cli/core';
 
 export interface StrategyColumnDef {
   name: string;

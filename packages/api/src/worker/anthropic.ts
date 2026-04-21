@@ -1,9 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '@analyze-cli/core';
-import { Comment, MediaFile, PromptTemplate, Strategy, Post } from '@analyze-cli/core'types';
-import { listMediaFilesByPost } from '@analyze-cli/core'media-files';
-import { getPlatformById } from '@analyze-cli/core'platforms';
-import { getCommentById } from '@analyze-cli/core'comments';
+import type { Comment, MediaFile, PromptTemplate, Strategy, Post } from '@analyze-cli/core';
+import { listMediaFilesByPost } from '@analyze-cli/core';
+import { getPlatformById } from '@analyze-cli/core';
+import { getCommentById } from '@analyze-cli/core';
 
 const client = new Anthropic({
   apiKey: config.anthropic.api_key,

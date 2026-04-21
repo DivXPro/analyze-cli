@@ -28,7 +28,7 @@ const { fetchViaOpencli } = opencli;
 import * as utils from '../../packages/core/dist/shared/utils.js';
 const { now } = utils;
 
-import { getHandlers } from '../../src/daemon/handlers.ts';
+import { getHandlers } from '../../packages/api/src/daemon/handlers.ts';
 
 const RUN_ID = `xhs_flow_${Date.now()}`;
 const TEST_PLATFORM = `${RUN_ID}_platform`;

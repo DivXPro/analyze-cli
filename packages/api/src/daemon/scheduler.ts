@@ -1,4 +1,4 @@
-import type { QueueJob } from '@analyze-cli/core'types';
+import type { QueueJob } from '@analyze-cli/core';
 
 export interface EnqueueResult {
   enqueued: number;

@@ -12,7 +12,7 @@ import * as platformsMod from '../../packages/core/dist/db/platforms.js';
 const { createPlatform } = platformsMod;
 import * as tasksMod from '../../packages/core/dist/db/tasks.js';
 const { createTask } = tasksMod;
-import * as anthropic from '../../src/worker/anthropic.ts';
+import * as anthropic from '../../packages/api/src/worker/anthropic.ts';
 const { buildStrategyPrompt } = anthropic;
 import * as queueJobs from '../../packages/core/dist/db/queue-jobs.js';
 const { syncWaitingMediaJobs } = queueJobs;
@@ -23,8 +23,8 @@ import {
 } from '../../packages/core/dist/db/analysis-results.js';
 import * as testPath from 'path';
 import * as testFs from 'fs';
-import { getHandlers } from '../../src/daemon/handlers.ts';
-import { parseStrategyResult } from '../../src/worker/parser.ts';
+import { getHandlers } from '../../packages/api/src/daemon/handlers.ts';
+import { parseStrategyResult } from '../../packages/api/src/worker/parser.ts';
 
 describe('strategy system', { timeout: 15000 }, () => {
   before(async () => {
