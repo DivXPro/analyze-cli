@@ -15,7 +15,8 @@ export function getAuthToken(): string {
 
 export async function setupAuth(app: FastifyInstance) {
   app.addHook('onRequest', async (request, reply) => {
-    if (request.url === '/health') return;
+    // Only protect API routes
+    if (!request.url.startsWith('/api/')) return;
 
     const auth = request.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
