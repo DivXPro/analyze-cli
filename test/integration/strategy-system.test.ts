@@ -30,12 +30,19 @@ describe('strategy system', { timeout: 15000 }, () => {
   before(async () => {
     closeDb();
     await runMigrations();
+    // Clean up child tables first to avoid FK constraint errors
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
-    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
     await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
     await query("DELETE FROM queue_jobs WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM queue_jobs WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_targets WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'daemon-analyze-task'");
+    await query("DELETE FROM task_steps WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_steps WHERE strategy_id = 'e2e-secondary-strategy'");
     await query("DELETE FROM comments WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM media_files WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
@@ -45,7 +52,6 @@ describe('strategy system', { timeout: 15000 }, () => {
     await query("DELETE FROM tasks WHERE id LIKE 'e2e-task-%'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
     await query("DELETE FROM strategies WHERE id = 'daemon-strategy-1'");
-    await query("DELETE FROM task_steps WHERE strategy_id = 'e2e-secondary-strategy'");
     await query("DELETE FROM strategies WHERE id = 'e2e-secondary-strategy'");
     await query("DELETE FROM strategies WHERE id LIKE 'e2e-%'");
     await query("DELETE FROM platforms WHERE name = 'Test Platform'");
@@ -579,13 +585,20 @@ describe('strategy system', { timeout: 15000 }, () => {
   });
 
   after(async () => {
+    // Clean up child tables first to avoid FK constraint errors
     await query("DELETE FROM analysis_results_strategy_test_schema_1 WHERE task_id = 'task-1'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
-    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
     await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
     await query("DELETE FROM queue_jobs WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM queue_jobs WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_targets WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'daemon-analyze-task'");
+    await query("DELETE FROM task_steps WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_steps WHERE strategy_id = 'e2e-secondary-strategy'");
     await query("DELETE FROM comments WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM media_files WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
@@ -594,7 +607,6 @@ describe('strategy system', { timeout: 15000 }, () => {
     await query("DELETE FROM tasks WHERE id = 'daemon-analyze-task'");
     await query("DELETE FROM tasks WHERE id LIKE 'e2e-task-%'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
-    await query("DELETE FROM task_steps WHERE strategy_id = 'e2e-secondary-strategy'");
     await query("DELETE FROM strategies WHERE id = 'e2e-secondary-strategy'");
     await query("DELETE FROM strategies WHERE id = 'daemon-strategy-1'");
     await query("DELETE FROM strategies WHERE id LIKE 'e2e-%'");
