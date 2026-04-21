@@ -92,10 +92,10 @@ async function migrateDependsOnColumns(): Promise<void> {
     "SELECT column_name as name FROM information_schema.columns WHERE table_name = 'strategies'"
   );
   if (!columns.some(c => c.name === 'depends_on')) {
-    await exec("ALTER TABLE strategies ADD COLUMN depends_on TEXT CHECK(depends_on IN ('post', 'comment') OR depends_on IS NULL)");
+    await exec('ALTER TABLE strategies ADD COLUMN depends_on TEXT');
   }
   if (!columns.some(c => c.name === 'include_original')) {
-    await exec('ALTER TABLE strategies ADD COLUMN include_original BOOLEAN NOT NULL DEFAULT false');
+    await exec('ALTER TABLE strategies ADD COLUMN include_original BOOLEAN DEFAULT false');
   }
 }
 
@@ -104,7 +104,7 @@ async function migrateTaskStepsDependsOn(): Promise<void> {
     "SELECT column_name as name FROM information_schema.columns WHERE table_name = 'task_steps'"
   );
   if (!columns.some(c => c.name === 'depends_on_step_id')) {
-    await exec('ALTER TABLE task_steps ADD COLUMN depends_on_step_id TEXT REFERENCES task_steps(id)');
+    await exec('ALTER TABLE task_steps ADD COLUMN depends_on_step_id TEXT');
   }
 }
 
