@@ -7,13 +7,15 @@ export async function createStrategy(strategy: Omit<Strategy, 'created_at' | 'up
   await createStrategyResultTable(strategy.id, columnDefs);
 
   await run(
-    `INSERT INTO strategies (id, name, description, version, target, needs_media, prompt, output_schema, batch_config, file_path, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO strategies (id, name, description, version, target, needs_media, prompt, output_schema, batch_config, depends_on, include_original, file_path, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       strategy.id, strategy.name ?? null, strategy.description ?? null, strategy.version, strategy.target,
       strategy.needs_media != null ? JSON.stringify(strategy.needs_media) : null,
       strategy.prompt, JSON.stringify(strategy.output_schema),
       strategy.batch_config != null ? JSON.stringify(strategy.batch_config) : null,
+      strategy.depends_on ?? null,
+      strategy.include_original ?? false,
       strategy.file_path ?? null,
       now(), now(),
     ]
@@ -30,7 +32,7 @@ export async function listStrategies(): Promise<Strategy[]> {
   return rows.map(parseStrategyRow);
 }
 
-export async function updateStrategy(id: string, updates: Partial<Pick<Strategy, 'name' | 'description' | 'version' | 'prompt' | 'output_schema' | 'needs_media' | 'batch_config' | 'file_path'>>): Promise<void> {
+export async function updateStrategy(id: string, updates: Partial<Pick<Strategy, 'name' | 'description' | 'version' | 'prompt' | 'output_schema' | 'needs_media' | 'batch_config' | 'depends_on' | 'include_original' | 'file_path'>>): Promise<void> {
   const sets: string[] = [];
   const values: unknown[] = [];
   if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
@@ -40,6 +42,8 @@ export async function updateStrategy(id: string, updates: Partial<Pick<Strategy,
   if (updates.output_schema !== undefined) { sets.push('output_schema = ?'); values.push(JSON.stringify(updates.output_schema)); }
   if (updates.needs_media !== undefined) { sets.push('needs_media = ?'); values.push(updates.needs_media ? JSON.stringify(updates.needs_media) : null); }
   if (updates.batch_config !== undefined) { sets.push('batch_config = ?'); values.push(updates.batch_config ? JSON.stringify(updates.batch_config) : null); }
+  if (updates.depends_on !== undefined) { sets.push('depends_on = ?'); values.push(updates.depends_on ?? null); }
+  if (updates.include_original !== undefined) { sets.push('include_original = ?'); values.push(updates.include_original); }
   if (updates.file_path !== undefined) { sets.push('file_path = ?'); values.push(updates.file_path); }
   if (sets.length === 0) return;
   sets.push('updated_at = ?');
@@ -58,6 +62,8 @@ function parseStrategyRow(row: Strategy): Strategy {
     needs_media: typeof row.needs_media === 'string' ? JSON.parse(row.needs_media) : row.needs_media,
     output_schema: typeof row.output_schema === 'string' ? JSON.parse(row.output_schema) : row.output_schema,
     batch_config: typeof row.batch_config === 'string' ? JSON.parse(row.batch_config) : row.batch_config,
+    depends_on: (row as any).depends_on ?? null,
+    include_original: (row as any).include_original ?? false,
   } as Strategy;
 }
 
@@ -89,6 +95,14 @@ export function validateStrategyJson(data: unknown): { valid: boolean; error?: s
         return { valid: false, error: 'batch_config.size must be an integer between 1 and 100' };
       }
     }
+  }
+  if (obj.depends_on !== undefined && obj.depends_on !== null) {
+    if (obj.depends_on !== 'post' && obj.depends_on !== 'comment') {
+      return { valid: false, error: `Invalid depends_on: ${obj.depends_on}. Must be 'post' or 'comment'` };
+    }
+  }
+  if (obj.include_original !== undefined && typeof obj.include_original !== 'boolean') {
+    return { valid: false, error: 'include_original must be a boolean' };
   }
   const schema = obj.output_schema as Record<string, unknown>;
   if (typeof schema !== 'object' || schema === null) {

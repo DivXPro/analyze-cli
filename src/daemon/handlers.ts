@@ -472,16 +472,35 @@ export function getHandlers(): Record<string, Handler> {
       const taskId = params.task_id as string;
       const strategyId = params.strategy_id as string;
       const name = (params.name as string | undefined) ?? strategyId;
-      const { createTaskStep, getNextStepOrder } = await import('../db/task-steps');
+      const dependsOnStepId = params.depends_on_step_id as string | undefined;
+      const { createTaskStep, getNextStepOrder, getTaskStepById } = await import('../db/task-steps');
       const { getStrategyById } = await import('../db/strategies');
 
       const strategy = await getStrategyById(strategyId);
       if (!strategy) throw new Error(`Strategy not found: ${strategyId}`);
 
+      // Validate dependency
+      if (strategy.depends_on) {
+        if (!dependsOnStepId) {
+          throw new Error(`Strategy "${strategy.name}" requires depends_on_step_id (it depends on upstream results)`);
+        }
+        const upstreamStep = await getTaskStepById(dependsOnStepId);
+        if (!upstreamStep) throw new Error(`Upstream step not found: ${dependsOnStepId}`);
+        if (upstreamStep.task_id !== taskId) throw new Error('Upstream step does not belong to this task');
+        if (!upstreamStep.strategy_id) throw new Error('Upstream step has no strategy');
+
+        const upstreamStrategy = await getStrategyById(upstreamStep.strategy_id);
+        if (!upstreamStrategy) throw new Error(`Upstream strategy not found: ${upstreamStep.strategy_id}`);
+        if (upstreamStrategy.target !== strategy.depends_on) {
+          throw new Error(`Strategy depends_on="${strategy.depends_on}" but upstream strategy target="${upstreamStrategy.target}"`);
+        }
+      }
+
       const stepOrder = (params.order as number | undefined) ?? await getNextStepOrder(taskId);
       const step = await createTaskStep({
         task_id: taskId,
         strategy_id: strategyId,
+        depends_on_step_id: dependsOnStepId ?? null,
         name,
         step_order: stepOrder,
         status: 'pending',
@@ -569,13 +588,29 @@ export function getHandlers(): Record<string, Handler> {
       const taskId = params.task_id as string;
       const { listTaskSteps, updateTaskStepStatus } = await import('../db/task-steps');
       const steps = await listTaskSteps(taskId);
-      const pendingSteps = steps.filter(s => s.status === 'pending' || s.status === 'failed');
+
+      // Topological sort: steps with dependencies come after their upstream
+      const stepMap = new Map(steps.map(s => [s.id, s]));
+      const sorted = [...steps].sort((a, b) => {
+        if (a.depends_on_step_id === b.id) return 1;
+        if (b.depends_on_step_id === a.id) return -1;
+        return a.step_order - b.step_order;
+      });
+
+      const pendingSteps = sorted.filter(s => s.status === 'pending' || s.status === 'failed');
 
       let completed = 0;
       let failed = 0;
       let skipped = 0;
 
       for (const step of pendingSteps) {
+        if (step.depends_on_step_id) {
+          const upstreamStep = stepMap.get(step.depends_on_step_id);
+          if (upstreamStep && upstreamStep.status !== 'completed') {
+            continue;
+          }
+        }
+
         try {
           const result = await (this as any)['task.step.run']({ task_id: taskId, step_id: step.id });
           if (result.status === 'skipped') {
@@ -923,6 +958,8 @@ export function getHandlers(): Record<string, Handler> {
         prompt: obj.prompt as string,
         output_schema: obj.output_schema as any,
         batch_config: (obj.batch_config ?? null) as any,
+        depends_on: (obj.depends_on ?? null) as 'post' | 'comment' | null,
+        include_original: (obj.include_original ?? false) as boolean,
         file_path: (typeof params.file === 'string' ? params.file : null) as string | null,
       };
 

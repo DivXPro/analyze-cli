@@ -30,12 +30,19 @@ describe('strategy system', { timeout: 15000 }, () => {
   before(async () => {
     closeDb();
     await runMigrations();
+    // Clean up child tables first to avoid FK constraint errors
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
-    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
     await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
     await query("DELETE FROM queue_jobs WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM queue_jobs WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_targets WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'daemon-analyze-task'");
+    await query("DELETE FROM task_steps WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_steps WHERE strategy_id = 'e2e-secondary-strategy'");
     await query("DELETE FROM comments WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM media_files WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
@@ -45,6 +52,7 @@ describe('strategy system', { timeout: 15000 }, () => {
     await query("DELETE FROM tasks WHERE id LIKE 'e2e-task-%'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
     await query("DELETE FROM strategies WHERE id = 'daemon-strategy-1'");
+    await query("DELETE FROM strategies WHERE id = 'e2e-secondary-strategy'");
     await query("DELETE FROM strategies WHERE id LIKE 'e2e-%'");
     await query("DELETE FROM platforms WHERE name = 'Test Platform'");
     await query("DELETE FROM platforms WHERE id LIKE 'e2e_%'");
@@ -96,6 +104,8 @@ describe('strategy system', { timeout: 15000 }, () => {
       needs_media: { enabled: false },
       prompt: 'Analyze {{content}}',
       output_schema: { type: 'object', properties: {} },
+      depends_on: null as 'post' | 'comment' | null,
+      include_original: false,
       file_path: null,
     };
     await createStrategy(strategy);
@@ -479,14 +489,116 @@ describe('strategy system', { timeout: 15000 }, () => {
     testFs.unlinkSync(strategyFile);
   });
 
+  it('should have depends_on and include_original columns in strategies table', async () => {
+    const rows = await query<{ column_name: string }>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'strategies' AND column_name IN ('depends_on', 'include_original')"
+    );
+    const columns = rows.map(r => r.column_name);
+    assert.ok(columns.includes('depends_on'));
+    assert.ok(columns.includes('include_original'));
+  });
+
+  it('should have depends_on_step_id column in task_steps table', async () => {
+    const rows = await query<{ column_name: string }>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'task_steps' AND column_name = 'depends_on_step_id'"
+    );
+    assert.equal(rows.length, 1);
+  });
+
+  it('should validate depends_on field', async () => {
+    const valid = validateStrategyJson({
+      id: 'test-secondary',
+      name: 'Secondary Strategy',
+      version: '1.0.0',
+      target: 'post',
+      depends_on: 'post',
+      include_original: true,
+      prompt: 'Based on: {{upstream_result}}\n\nOriginal: {{original_content}}',
+      output_schema: {
+        type: 'object',
+        properties: {
+          risk_level: { type: 'string', enum: ['low', 'medium', 'high'] },
+        },
+        required: ['risk_level'],
+      },
+    });
+    assert.equal(valid.valid, true);
+  });
+
+  it('should reject invalid depends_on value', async () => {
+    const result = validateStrategyJson({
+      id: 'test-bad-depends',
+      name: 'Bad Depends',
+      version: '1.0.0',
+      target: 'post',
+      depends_on: 'invalid',
+      prompt: 'test',
+      output_schema: { type: 'object', properties: { x: { type: 'string' } } },
+    });
+    assert.equal(result.valid, false);
+    assert.ok(result.error?.includes('depends_on'));
+  });
+
+  it('should create a secondary strategy with depends_on', async () => {
+    await createStrategy({
+      id: 'e2e-secondary-strategy',
+      name: 'Risk Judgment',
+      description: 'Judge risk based on scoring results',
+      version: '1.0.0',
+      target: 'post',
+      needs_media: null,
+      prompt: 'Based on scoring result:\n{{upstream_result}}\n\nJudge the risk level.',
+      output_schema: {
+        type: 'object',
+        properties: {
+          risk_level: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+          explanation: { type: 'string' },
+        },
+        required: ['risk_level', 'explanation'],
+      },
+      batch_config: null,
+      depends_on: 'post',
+      include_original: true,
+      file_path: null,
+    });
+
+    const strategy = await getStrategyById('e2e-secondary-strategy');
+    assert.ok(strategy);
+    assert.equal(strategy.depends_on, 'post');
+    assert.equal(strategy.include_original, true);
+  });
+
+  it('should add step with depends_on_step_id', async () => {
+    const { createTaskStep } = await import('../../dist/db/task-steps.js');
+    const step = await createTaskStep({
+      task_id: 'test-task',
+      strategy_id: 'e2e-secondary-strategy',
+      depends_on_step_id: null,
+      name: 'Secondary step',
+      step_order: 2,
+      status: 'pending',
+      stats: { total: 0, done: 0, failed: 0 },
+      error: null,
+    });
+    assert.ok(step.id);
+    assert.equal(step.depends_on_step_id, null);
+  });
+
   after(async () => {
+    // Clean up child tables first to avoid FK constraint errors
     await query("DELETE FROM analysis_results_strategy_test_schema_1 WHERE task_id = 'task-1'");
     await query("DELETE FROM queue_jobs WHERE task_id = 'daemon-analyze-task'");
-    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM queue_jobs WHERE id = 'test-waiting-media-job'");
     await query("DELETE FROM queue_jobs WHERE id = 'sync-job-1'");
     await query("DELETE FROM queue_jobs WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM queue_jobs WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_targets WHERE task_id = 'daemon-analyze-task'");
     await query("DELETE FROM task_targets WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_targets WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'test-task'");
+    await query("DELETE FROM task_steps WHERE task_id = 'daemon-analyze-task'");
+    await query("DELETE FROM task_steps WHERE task_id LIKE 'e2e-task-%'");
+    await query("DELETE FROM task_steps WHERE strategy_id = 'e2e-secondary-strategy'");
     await query("DELETE FROM comments WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM media_files WHERE platform_id LIKE 'e2e_%'");
     await query("DELETE FROM posts WHERE platform_id LIKE 'plt_%'");
@@ -495,6 +607,7 @@ describe('strategy system', { timeout: 15000 }, () => {
     await query("DELETE FROM tasks WHERE id = 'daemon-analyze-task'");
     await query("DELETE FROM tasks WHERE id LIKE 'e2e-task-%'");
     await query("DELETE FROM strategies WHERE id = 'test-strategy-1'");
+    await query("DELETE FROM strategies WHERE id = 'e2e-secondary-strategy'");
     await query("DELETE FROM strategies WHERE id = 'daemon-strategy-1'");
     await query("DELETE FROM strategies WHERE id LIKE 'e2e-%'");
     await query("DELETE FROM platforms WHERE name = 'Test Platform'");

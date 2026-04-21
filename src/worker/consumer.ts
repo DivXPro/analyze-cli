@@ -231,6 +231,25 @@ async function processMediaJob(
   [media.media_type, parsed.content_type, parsed.description, parsed.ocr_text, parsed.sentiment_label, parsed.sentiment_score, parsed.risk_flagged, parsed.risk_level, parsed.risk_reason, parsed.objects, parsed.logos, parsed.faces]);
 }
 
+async function resolveUpstreamResult(
+  taskId: string,
+  strategyId: string,
+  targetId: string,
+): Promise<Record<string, unknown> | null> {
+  const { listTaskSteps } = await import('../db/task-steps');
+  const { getStrategyById } = await import('../db/strategies');
+  const { getUpstreamResult } = await import('../db/analysis-results');
+
+  const steps = await listTaskSteps(taskId);
+  const currentStep = steps.find(s => s.strategy_id === strategyId);
+  if (!currentStep || !currentStep.depends_on_step_id) return null;
+
+  const upstreamStep = steps.find(s => s.id === currentStep.depends_on_step_id);
+  if (!upstreamStep || !upstreamStep.strategy_id) return null;
+
+  return getUpstreamResult(upstreamStep.strategy_id, taskId, targetId);
+}
+
 async function processStrategyJob(
   job: QueueJob,
   task: { id: string; name: string },
@@ -242,11 +261,17 @@ async function processStrategyJob(
   const strategy = await getStrategyById(job.strategy_id);
   if (!strategy) throw new Error(`Strategy ${job.strategy_id} not found`);
 
+  // Resolve upstream result for secondary strategies
+  let upstreamResult: Record<string, unknown> | null = null;
+  if (strategy.depends_on) {
+    upstreamResult = await resolveUpstreamResult(job.task_id, job.strategy_id!, job.target_id!);
+  }
+
   if (strategy.target === 'post') {
     const post = await getPostById(job.target_id);
     if (!post) throw new Error(`Post ${job.target_id} not found`);
 
-    const rawResponse = await analyzeWithStrategy(post, strategy);
+    const rawResponse = await analyzeWithStrategy(post, strategy, upstreamResult);
     const parsed = parseStrategyResult(rawResponse, strategy.output_schema);
 
     const dynamicColumns = Object.keys(parsed.values);
@@ -280,14 +305,14 @@ async function processStrategyJob(
     const comment = await getCommentById(job.target_id);
     if (!comment) throw new Error(`Comment ${job.target_id} not found`);
 
-    // Batch analysis
-    if (strategy.batch_config?.enabled && strategy.batch_config.size > 1) {
+    // Batch analysis (not supported for secondary strategies — each comment may have different upstream results)
+    if (strategy.batch_config?.enabled && strategy.batch_config.size > 1 && !strategy.depends_on) {
       await processCommentBatch(job, strategy, comment, task, workerId);
       return;
     }
 
     // Single comment analysis
-    const rawResponse = await analyzeWithStrategy(comment, strategy);
+    const rawResponse = await analyzeWithStrategy(comment, strategy, upstreamResult);
     const parsed = parseStrategyResult(rawResponse, strategy.output_schema);
 
     const dynamicColumns = Object.keys(parsed.values);
