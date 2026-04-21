@@ -60,7 +60,11 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
   return result;
 }
 
-export async function buildCommentPrompt(comment: Comment, strategy: Strategy): Promise<string> {
+export async function buildCommentPrompt(
+  comment: Comment,
+  strategy: Strategy,
+  upstreamResult?: Record<string, unknown> | null,
+): Promise<string> {
   const platform = comment.platform_id ? await getPlatformById(comment.platform_id) : null;
 
   let parentAuthor = '';
@@ -78,6 +82,8 @@ export async function buildCommentPrompt(comment: Comment, strategy: Strategy): 
     parent_author: parentAuthor,
     reply_count: String(comment.reply_count ?? 0),
     media_urls: '',
+    upstream_result: upstreamResult ? JSON.stringify(upstreamResult, null, 2) : '',
+    original_content: strategy.include_original ? (comment.content ?? '') : '',
   };
 
   let result = strategy.prompt;
@@ -95,10 +101,11 @@ export async function buildCommentPrompt(comment: Comment, strategy: Strategy): 
 export async function analyzeWithStrategy(
   target: Post | Comment,
   strategy: Strategy,
+  upstreamResult?: Record<string, unknown> | null,
 ): Promise<string> {
   const prompt = 'post_id' in target
-    ? await buildCommentPrompt(target, strategy)
-    : await buildStrategyPrompt(target, strategy);
+    ? await buildCommentPrompt(target, strategy, upstreamResult)
+    : await buildStrategyPrompt(target, strategy, upstreamResult);
 
   const response = await client.messages.create({
     model: config.anthropic.model,
@@ -190,7 +197,11 @@ export async function analyzeBatchWithStrategy(
   return text && 'text' in text ? text.text : '';
 }
 
-export async function buildStrategyPrompt(target: Post, strategy: Strategy): Promise<string> {
+export async function buildStrategyPrompt(
+  target: Post,
+  strategy: Strategy,
+  upstreamResult?: Record<string, unknown> | null,
+): Promise<string> {
   const platform = target.platform_id ? await getPlatformById(target.platform_id) : null;
   const vars: Record<string, string> = {
     content: target.content ?? '',
@@ -200,6 +211,8 @@ export async function buildStrategyPrompt(target: Post, strategy: Strategy): Pro
     published_at: target.published_at?.toISOString() ?? '未知',
     tags: target.tags ? JSON.stringify(target.tags) : '',
     media_urls: '',
+    upstream_result: upstreamResult ? JSON.stringify(upstreamResult, null, 2) : '',
+    original_content: strategy.include_original ? (target.content ?? '') : '',
   };
 
   if (strategy.needs_media?.enabled) {
