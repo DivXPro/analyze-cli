@@ -63,7 +63,7 @@ const statusVariantMap: Record<string, 'default' | 'secondary' | 'destructive' |
   failed: 'destructive',
 };
 
-function StepRow({ step }: { step: TaskStep }) {
+function StepRow({ step, taskId }: { step: TaskStep; taskId: string }) {
   const [expanded, setExpanded] = useState(false);
   const [results, setResults] = useState<AnalysisResult[]>([]);
   const [resultStats, setResultStats] = useState<ResultStats | null>(null);

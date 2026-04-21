@@ -1,15 +1,23 @@
 import { FastifyInstance } from 'fastify';
-import { retryFailedJobs, resetJobs, getQueueStats } from '@analyze-cli/core';
+import { retryFailedJobs, resetJobs, getQueueStats, listRecentJobs } from '@analyze-cli/core';
 
 export default async function queueRoutes(app: FastifyInstance) {
   app.get('/queue', async (request) => {
-    const { task_id } = request.query as Record<string, string>;
-    return { task_id, stats: await getQueueStats() };
+    const { status } = request.query as Record<string, string>;
+    const [stats, jobs] = await Promise.all([
+      getQueueStats(),
+      listRecentJobs(status || undefined, 50),
+    ]);
+    return { stats, jobs };
   });
 
-  app.post('/queue/:id/retry', async (request) => {
-    const { id } = request.params as { id: string };
-    const retried = await retryFailedJobs(id);
+  app.post('/queue/retry', async () => {
+    const retried = await retryFailedJobs();
     return { retried };
+  });
+
+  app.post('/queue/reset', async () => {
+    const reset = await resetJobs();
+    return { reset };
   });
 }

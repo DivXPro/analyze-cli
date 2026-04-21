@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Heart, MessageCircle, Share2, Bookmark, Eye, Search, SlidersHorizontal } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Bookmark, Eye, Search, SlidersHorizontal, BarChart3, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { apiGet } from '@/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 
 interface Post {
   id: string;
@@ -27,6 +30,16 @@ interface Post {
 interface Platform {
   id: string;
   name: string;
+}
+
+interface AnalysisResult {
+  strategy_id: string;
+  strategy_name: string;
+  task_id: string;
+  target_type: string;
+  target_id: string | null;
+  raw_response: Record<string, unknown> | null;
+  analyzed_at: string;
 }
 
 function getPlatformMeta(platformId: string) {
@@ -54,7 +67,82 @@ function PlatformBadge({ platformId }: { platformId: string }) {
   );
 }
 
+function AnalysisSection({ postId }: { postId: string }) {
+  const [results, setResults] = useState<AnalysisResult[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiGet<AnalysisResult[]>(`/api/posts/${postId}/analysis`)
+      .then((data) => { if (!cancelled) setResults(data); })
+      .catch(() => { if (!cancelled) setResults([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [postId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-xs text-muted-foreground">加载分析结果...</span>
+      </div>
+    );
+  }
+
+  if (results.length === 0) {
+    return <p className="text-xs text-muted-foreground py-2">暂无分析结果</p>;
+  }
+
+  // Group by strategy
+  const grouped = results.reduce<Record<string, AnalysisResult[]>>((acc, r) => {
+    const key = r.strategy_name || r.strategy_id;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(r);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-3 pt-2 border-t">
+      {Object.entries(grouped).map(([strategyName, items]) => (
+        <div key={strategyName}>
+          <p className="text-xs font-medium text-muted-foreground mb-1">{strategyName}</p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="h-7 text-xs">目标</TableHead>
+                <TableHead className="h-7 text-xs">摘要</TableHead>
+                <TableHead className="h-7 text-xs">时间</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((r, i) => (
+                <TableRow key={i}>
+                  <TableCell className="text-xs py-1">
+                    <Badge variant="outline" className="text-[10px] h-4">
+                      {r.target_type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs py-1 max-w-[200px] truncate">
+                    {r.raw_response
+                      ? String(r.raw_response.sentiment ?? r.raw_response.summary ?? JSON.stringify(r.raw_response).slice(0, 60))
+                      : '-'}
+                  </TableCell>
+                  <TableCell className="text-xs py-1 text-muted-foreground whitespace-nowrap">
+                    {new Date(r.analyzed_at).toLocaleDateString('zh-CN')}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PostCard({ post }: { post: Post }) {
+  const [expanded, setExpanded] = useState(false);
   const contentPreview = post.content?.slice(0, 120) + (post.content?.length > 120 ? '...' : '') || '无内容';
 
   return (
@@ -109,13 +197,28 @@ function PostCard({ post }: { post: Post }) {
               ? new Date(post.published_at).toLocaleDateString('zh-CN')
               : new Date(post.fetched_at).toLocaleDateString('zh-CN')}
           </span>
-          <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
-            <a href={post.url ?? '#'} target="_blank" rel="noopener noreferrer">
-              <Share2 className="h-3 w-3 mr-1" />
-              查看
-            </a>
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setExpanded(!expanded)}
+            >
+              <BarChart3 className="h-3 w-3 mr-1" />
+              分析
+              {expanded ? <ChevronUp className="h-3 w-3 ml-0.5" /> : <ChevronDown className="h-3 w-3 ml-0.5" />}
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+              <a href={post.url ?? '#'} target="_blank" rel="noopener noreferrer">
+                <Share2 className="h-3 w-3 mr-1" />
+                查看
+              </a>
+            </Button>
+          </div>
         </div>
+
+        {/* 分析结果展开区 */}
+        {expanded && <AnalysisSection postId={post.id} />}
       </CardContent>
     </Card>
   );

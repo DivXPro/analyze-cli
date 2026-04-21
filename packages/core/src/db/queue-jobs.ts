@@ -121,6 +121,16 @@ export async function listJobsByTask(taskId: string): Promise<QueueJob[]> {
   return query<QueueJob>('SELECT * FROM queue_jobs WHERE task_id = ? ORDER BY created_at', [taskId]);
 }
 
+export async function listRecentJobs(status?: string, limit = 50): Promise<QueueJob[]> {
+  if (status) {
+    return query<QueueJob>(
+      'SELECT * FROM queue_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?',
+      [status, limit],
+    );
+  }
+  return query<QueueJob>('SELECT * FROM queue_jobs ORDER BY created_at DESC LIMIT ?', [limit]);
+}
+
 export async function getQueueStats(): Promise<{ pending: number; processing: number; completed: number; failed: number }> {
   const rows = await query<{ status: string; cnt: bigint }>(
     `SELECT status, COUNT(*) as cnt FROM queue_jobs GROUP BY status`

@@ -248,11 +248,9 @@ spawn('node', ['packages/api/dist/index.js'])
 2. 实现 Dashboard 页面
 3. UI 通过 HTTP 调用 `api`
 
-### Phase 4：CLI 瘦身
+### ~~Phase 4：CLI 瘦身~~（已取消）
 
-1. CLI 命令改为调用 `core` 的接口
-2. 异步操作改为调用 `api` 的 HTTP 接口
-3. 移除 CLI 中重复的数据库操作代码
+> 此阶段已取消，CLI 保持现有架构不变。
 
 ## 监控与可观测性
 
