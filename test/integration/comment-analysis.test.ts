@@ -1,24 +1,24 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
-import * as db from '../../dist/db/client.js';
+import * as db from '../../packages/core/src/db/client.ts';
 const { query, close: closeDb } = db;
-import * as migrate from '../../dist/db/migrate.js';
+import * as migrate from '../../packages/core/src/db/migrate.ts';
 const { runMigrations } = migrate;
-import * as platforms from '../../dist/db/platforms.js';
+import * as platforms from '../../packages/core/src/db/platforms.ts';
 const { createPlatform } = platforms;
-import * as posts from '../../dist/db/posts.js';
+import * as posts from '../../packages/core/src/db/posts.ts';
 const { createPost } = posts;
-import * as comments from '../../dist/db/comments.js';
+import * as comments from '../../packages/core/src/db/comments.ts';
 const { createComment, listCommentsByIds, getCommentById } = comments;
-import * as tasks from '../../dist/db/tasks.js';
+import * as tasks from '../../packages/core/src/db/tasks.ts';
 const { createTask } = tasks;
-import * as taskTargets from '../../dist/db/task-targets.js';
+import * as taskTargets from '../../packages/core/src/db/task-targets.ts';
 const { addTaskTargets } = taskTargets;
-import * as taskSteps from '../../dist/db/task-steps.js';
+import * as taskSteps from '../../packages/core/src/db/task-steps.ts';
 const { createTaskStep } = taskSteps;
-import * as strategies from '../../dist/db/strategies.js';
+import * as strategies from '../../packages/core/src/db/strategies.ts';
 const { validateStrategyJson, createStrategy, createStrategyResultTable } = strategies;
-import * as utils from '../../dist/shared/utils.js';
+import * as utils from '../../packages/core/src/shared/utils.ts';
 const { generateId } = utils;
 
 const RUN_ID = `comment_${Date.now()}`;
@@ -127,7 +127,7 @@ describe('Comment strategy analysis', { timeout: 30000 }, () => {
   });
 
   it('should build comment prompt with depth and parent context', async () => {
-    const { buildCommentPrompt } = await import('../../dist/worker/anthropic.js');
+    const { buildCommentPrompt } = await import('../../src/worker/anthropic.ts');
     const comment = await getCommentById(commentIds[1]);
     assert.ok(comment);
     const prompt = await buildCommentPrompt(comment!, {
@@ -167,7 +167,7 @@ describe('Comment strategy analysis', { timeout: 30000 }, () => {
   });
 
   it('should parse batch strategy result', async () => {
-    const { parseBatchStrategyResult } = await import('../../dist/worker/parser.js');
+    const { parseBatchStrategyResult } = await import('../../src/worker/parser.ts');
     const outputSchema = {
       type: 'object',
       properties: {
@@ -190,7 +190,7 @@ describe('Comment strategy analysis', { timeout: 30000 }, () => {
   });
 
   it('should reject batch result with mismatched count', async () => {
-    const { parseBatchStrategyResult } = await import('../../dist/worker/parser.js');
+    const { parseBatchStrategyResult } = await import('../../src/worker/parser.ts');
     const outputSchema = {
       type: 'object',
       properties: { sentiment: { type: 'string' } },
@@ -208,14 +208,14 @@ describe('Comment strategy analysis', { timeout: 30000 }, () => {
   });
 
   it('should reject invalid batch JSON', async () => {
-    const { parseBatchStrategyResult } = await import('../../dist/worker/parser.js');
+    const { parseBatchStrategyResult } = await import('../../src/worker/parser.ts');
     const outputSchema = { type: 'object', properties: {} };
 
     assert.throws(() => parseBatchStrategyResult('not-json', outputSchema), /Invalid JSON/);
   });
 
   it('should reject batch result without array', async () => {
-    const { parseBatchStrategyResult } = await import('../../dist/worker/parser.js');
+    const { parseBatchStrategyResult } = await import('../../src/worker/parser.ts');
     const outputSchema = { type: 'object', properties: {} };
 
     assert.throws(() => parseBatchStrategyResult('{"foo": "bar"}', outputSchema), /results array/);

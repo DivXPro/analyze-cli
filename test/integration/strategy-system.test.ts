@@ -1,30 +1,30 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import * as db from '../../dist/db/client.js';
+import * as db from '../../packages/core/src/db/client.ts';
 const { query, close: closeDb } = db;
-import * as migrate from '../../dist/db/migrate.js';
+import * as migrate from '../../packages/core/src/db/migrate.ts';
 const { runMigrations } = migrate;
-import * as strategies from '../../dist/db/strategies.js';
+import * as strategies from '../../packages/core/src/db/strategies.ts';
 const { createStrategy, getStrategyById, validateStrategyJson, getStrategyResultTableName, parseJsonSchemaToColumns, createStrategyResultTable } = strategies;
-import * as postsMod from '../../dist/db/posts.js';
+import * as postsMod from '../../packages/core/src/db/posts.ts';
 const { createPost } = postsMod;
-import * as platformsMod from '../../dist/db/platforms.js';
+import * as platformsMod from '../../packages/core/src/db/platforms.ts';
 const { createPlatform } = platformsMod;
-import * as tasksMod from '../../dist/db/tasks.js';
+import * as tasksMod from '../../packages/core/src/db/tasks.ts';
 const { createTask } = tasksMod;
-import * as anthropic from '../../dist/worker/anthropic.js';
+import * as anthropic from '../../src/worker/anthropic.ts';
 const { buildStrategyPrompt } = anthropic;
-import * as queueJobs from '../../dist/db/queue-jobs.js';
+import * as queueJobs from '../../packages/core/src/db/queue-jobs.ts';
 const { syncWaitingMediaJobs } = queueJobs;
 import {
   insertStrategyResult,
   listStrategyResultsByTask,
   getExistingResultIds,
-} from '../../dist/db/analysis-results.js';
+} from '../../packages/core/src/db/analysis-results.ts';
 import * as testPath from 'path';
 import * as testFs from 'fs';
-import { getHandlers } from '../../dist/daemon/handlers.js';
-import { parseStrategyResult } from '../../dist/worker/parser.js';
+import { getHandlers } from '../../src/daemon/handlers.ts';
+import { parseStrategyResult } from '../../src/worker/parser.ts';
 
 describe('strategy system', { timeout: 15000 }, () => {
   before(async () => {
@@ -90,7 +90,7 @@ describe('strategy system', { timeout: 15000 }, () => {
   });
 
   it('should import strategy types without error', async () => {
-    const { Strategy } = await import('../../dist/shared/types.js');
+    const { Strategy } = await import('../../packages/core/src/shared/types.ts');
     assert.ok(Strategy === undefined);
   });
 
@@ -455,7 +455,7 @@ describe('strategy system', { timeout: 15000 }, () => {
       status: 'pending', stats: { total: 0, done: 0, failed: 0 },
       created_at: new Date(), updated_at: new Date(), completed_at: null,
     });
-    const { addTaskTargets } = await import('../../dist/db/task-targets.js');
+    const { addTaskTargets } = await import('../../packages/core/src/db/task-targets.ts');
     await addTaskTargets(taskId, 'post', [post.id]);
 
     const strategyId = `e2e-strategy-${Date.now()}`;
@@ -569,7 +569,7 @@ describe('strategy system', { timeout: 15000 }, () => {
   });
 
   it('should add step with depends_on_step_id', async () => {
-    const { createTaskStep } = await import('../../dist/db/task-steps.js');
+    const { createTaskStep } = await import('../../packages/core/src/db/task-steps.ts');
     const step = await createTaskStep({
       task_id: 'test-task',
       strategy_id: 'e2e-secondary-strategy',

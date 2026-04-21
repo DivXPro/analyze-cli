@@ -1,22 +1,22 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
-import * as db from '../../dist/db/client.js';
+import * as db from '../../packages/core/src/db/client.ts';
 const { query, run, close: closeDb } = db;
-import * as migrate from '../../dist/db/migrate.js';
+import * as migrate from '../../packages/core/src/db/migrate.ts';
 const { runMigrations } = migrate;
-import * as seed from '../../dist/db/seed.js';
+import * as seed from '../../packages/core/src/db/seed.ts';
 const { seedAll } = seed;
-import * as taskPostStatus from '../../dist/db/task-post-status.js';
+import * as taskPostStatus from '../../packages/core/src/db/task-post-status.ts';
 const { upsertTaskPostStatus, getTaskPostStatuses, getTaskPostStatus, getPendingPostIds } = taskPostStatus;
-import * as tasks from '../../dist/db/tasks.js';
+import * as tasks from '../../packages/core/src/db/tasks.ts';
 const { createTask, getTaskById, updateTaskCliTemplates } = tasks;
-import * as platforms from '../../dist/db/platforms.js';
+import * as platforms from '../../packages/core/src/db/platforms.ts';
 const { createPlatform } = platforms;
-import * as posts from '../../dist/db/posts.js';
+import * as posts from '../../packages/core/src/db/posts.ts';
 const { createPost } = posts;
-import * as taskTargets from '../../dist/db/task-targets.js';
+import * as taskTargets from '../../packages/core/src/db/task-targets.ts';
 const { createTaskTarget } = taskTargets;
-import * as utils from '../../dist/shared/utils.js';
+import * as utils from '../../packages/core/src/shared/utils.ts';
 const { generateId, now } = utils;
 
 // Test constants — use timestamp to avoid collisions across runs

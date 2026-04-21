@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateStrategyJson } from '../../dist/db/strategies.js';
+import { validateStrategyJson } from '../../packages/core/src/db/strategies.ts';
 
 describe('validateStrategyJson', () => {
   it('should accept strategy without depends_on', () => {

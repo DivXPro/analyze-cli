@@ -1,16 +1,16 @@
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import * as db from '../../dist/db/client.js';
+import * as db from '../../packages/core/src/db/client.ts';
 const { query, run, close: closeDb } = db;
-import * as migrate from '../../dist/db/migrate.js';
+import * as migrate from '../../packages/core/src/db/migrate.ts';
 const { runMigrations } = migrate;
-import * as seed from '../../dist/db/seed.js';
+import * as seed from '../../packages/core/src/db/seed.ts';
 const { seedAll } = seed;
-import * as queueJobs from '../../dist/db/queue-jobs.js';
+import * as queueJobs from '../../packages/core/src/db/queue-jobs.ts';
 const { enqueueJob, getNextJob, getNextJobs, requeueJob, recoverStalledJobs, listJobsByTask } = queueJobs;
-import * as utils from '../../dist/shared/utils.js';
+import * as utils from '../../packages/core/src/shared/utils.ts';
 const { generateId, now } = utils;
-import * as tasks from '../../dist/db/tasks.js';
+import * as tasks from '../../packages/core/src/db/tasks.ts';
 const { createTask } = tasks;
 
 const RUN_ID = `qj_${Date.now()}`;
