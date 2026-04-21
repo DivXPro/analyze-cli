@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import {
   createTask, getTaskById, listTasks, updateTaskStatus, updateTaskStats,
+  listTaskSteps, listJobsByTask, listStrategyResultsByTask, getStrategyResultStats,
+  getTargetStats,
   generateId, now,
 } from '@analyze-cli/core';
 
@@ -17,7 +19,46 @@ export default async function tasksRoutes(app: FastifyInstance) {
       reply.code(404);
       throw new Error(`Task not found: ${id}`);
     }
-    return task;
+
+    const stats = await getTargetStats(id);
+    const steps = await listTaskSteps(id);
+    const jobs = await listJobsByTask(id);
+
+    return {
+      ...task,
+      stats,
+      steps: steps.map((s) => ({
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        strategy_id: s.strategy_id,
+        step_order: s.step_order,
+        stats: s.stats,
+      })),
+      jobs: jobs.map((j) => ({
+        id: j.id,
+        target_type: j.target_type,
+        target_id: j.target_id,
+        status: j.status,
+        attempts: j.attempts,
+        error: j.error,
+      })),
+    };
+  });
+
+  app.get('/tasks/:id/results', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { strategy_id } = request.query as Record<string, string>;
+
+    if (!strategy_id) {
+      reply.code(400);
+      throw new Error('strategy_id is required');
+    }
+
+    const results = await listStrategyResultsByTask(strategy_id, id, 100);
+    const stats = await getStrategyResultStats(strategy_id, id);
+
+    return { results, stats };
   });
 
   app.post('/tasks', async (request) => {
