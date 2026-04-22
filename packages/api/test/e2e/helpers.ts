@@ -1,9 +1,11 @@
-import fastify from 'fastify';
+import * as child_process from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { setupAuth } from '../../src/auth';
-import { registerRoutes } from '../../src/routes';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export interface TestContext {
   port: number;
@@ -11,43 +13,72 @@ export interface TestContext {
   cleanup: () => Promise<void>;
 }
 
+const API_PORT = 3000;
+
 export async function startServer(): Promise<TestContext> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyze-cli-e2e-'));
   const dbPath = path.join(tmpDir, 'test.duckdb');
 
-  // Set env before importing core (config loads eagerly)
-  process.env.ANALYZE_CLI_DB_PATH = dbPath;
-  process.env.ANALYZE_CLI_LOG_LEVEL = 'error';
+  const distPath = path.resolve(__dirname, '../../dist/index.js');
+  if (!fs.existsSync(distPath)) {
+    throw new Error('API dist not found. Run `pnpm --filter @analyze-cli/api build` first.');
+  }
 
-  // Dynamic import to pick up env vars
-  const core = await import('@analyze-cli/core');
-  await core.migrate();
-  await core.seedPlatforms();
+  // Wait for port to be available (previous test server may still be shutting down)
+  for (let i = 0; i < 20; i++) {
+    try {
+      const s = await import('node:net').then(m => m.createServer());
+      await new Promise<void>((resolve, reject) => {
+        s.listen(API_PORT, '127.0.0.1', () => { s.close(); resolve(); });
+        s.on('error', reject);
+      });
+      break;
+    } catch {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
 
-  const app = fastify({ logger: false });
+  const proc = child_process.spawn('node', [distPath], {
+    env: {
+      ...process.env,
+      ANALYZE_CLI_DB_PATH: dbPath,
+      ANALYZE_CLI_LOG_LEVEL: 'error',
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
 
-  app.get('/health', async () => ({ status: 'ok' }));
-  await setupAuth(app);
-  await registerRoutes(app);
+  // Wait for server to be ready
+  let ready = false;
+  for (let i = 0; i < 40; i++) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${API_PORT}/health`);
+      if (res.ok) {
+        ready = true;
+        break;
+      }
+    } catch {
+      // not ready yet
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
 
-  await app.listen({ port: 0, host: '127.0.0.1' });
-  const port = app.addresses()[0].port;
+  if (!ready) {
+    proc.kill('SIGKILL');
+    throw new Error(`Server failed to start within 10s`);
+  }
 
   return {
-    port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    port: API_PORT,
+    baseUrl: `http://127.0.0.1:${API_PORT}`,
     cleanup: async () => {
-      await app.close();
-      await core.close();
-      try {
-        fs.unlinkSync(dbPath);
-      } catch {}
-      try {
-        fs.unlinkSync(`${dbPath}.wal`);
-      } catch {}
-      try {
-        fs.rmdirSync(tmpDir);
-      } catch {}
+      proc.kill('SIGTERM');
+      await new Promise<void>((resolve) => {
+        proc.on('exit', () => resolve());
+        setTimeout(() => { proc.kill('SIGKILL'); resolve(); }, 5000);
+      });
+      try { fs.unlinkSync(dbPath); } catch {}
+      try { fs.unlinkSync(`${dbPath}.wal`); } catch {}
+      try { fs.rmdirSync(tmpDir); } catch {}
     },
   };
 }
@@ -57,10 +88,11 @@ export async function fetchApi(
   urlPath: string,
   options?: RequestInit
 ): Promise<Response> {
+  const hasBody = options?.body !== undefined;
   return fetch(`${baseUrl}${urlPath}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...options?.headers,
     },
   });

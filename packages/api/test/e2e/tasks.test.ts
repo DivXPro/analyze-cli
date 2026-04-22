@@ -159,7 +159,22 @@ describe('Tasks routes', () => {
     });
 
     it('returns results with strategy_id', async () => {
-      const res = await fetchApi(ctx.baseUrl, `/api/tasks/${taskId}/results?strategy_id=some-strategy`);
+      // Create a strategy first so its result table exists
+      const stratRes = await fetchApi(ctx.baseUrl, '/api/strategies', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: 'results-test-strategy',
+          name: 'Results Test',
+          version: '1.0.0',
+          target: 'post',
+          needs_media: { enabled: false },
+          prompt: 'Test',
+          output_schema: { type: 'object', properties: { sentiment: { type: 'string' } } },
+        }),
+      });
+      assert.equal(stratRes.status, 200);
+
+      const res = await fetchApi(ctx.baseUrl, `/api/tasks/${taskId}/results?strategy_id=results-test-strategy`);
       assert.equal(res.status, 200);
       const body = await res.json();
       assert.ok(Array.isArray(body.results));

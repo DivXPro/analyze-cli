@@ -5,8 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsup src/index.ts --format cjs --out-dir dist --external @analyze-cli/core --external duckdb --external fastify --minify",
-    "dev": "tsup src/index.ts --format cjs --out-dir dist --external @analyze-cli/core --external duckdb --external fastify --watch",
-    "start": "node dist/index.js"
+    "dev": "tsup src/index.ts --format cjs --out-dir dist --external @analyze-cli/core --external duckdb --external fastify --watch --onSuccess 'node dist/index.js'",
+    "start": "node dist/index.js",
+    "test:e2e": "node --test --import tsx 'test/e2e/*.test.ts' --test-concurrency 1"
   },
   "dependencies": {
     "@analyze-cli/core": "workspace:*",
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^22.15.3",
     "tsup": "^8.4.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   },
   "engines": {
