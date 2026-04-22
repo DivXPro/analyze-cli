@@ -74,7 +74,7 @@ export default function Overview() {
 
   useEffect(() => {
     Promise.all([
-      apiGet<StatusData>('/api/daemon/status'),
+      apiGet<StatusData>('/api/status'),
       apiGet<Task[]>('/api/tasks'),
     ])
       .then(([s, tasks]) => {
