@@ -1,6 +1,6 @@
 {
   "name": "@analyze-cli/core",
-  "version": "0.1.11",
+  "version": "1.0.0",
   "description": "Shared core for analyze-cli: database, config, types, utilities",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

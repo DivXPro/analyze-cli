@@ -1,6 +1,6 @@
 {
   "name": "@analyze-cli/cli",
-  "version": "0.1.11",
+  "version": "1.0.0",
   "description": "CLI entry for analyze-cli",
   "main": "dist/index.js",
   "bin": {

@@ -1,6 +1,6 @@
 {
   "name": "@analyze-cli/api",
-  "version": "0.1.11",
+  "version": "1.0.0",
   "description": "HTTP API service for analyze-cli",
   "main": "dist/index.js",
   "scripts": {
