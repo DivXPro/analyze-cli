@@ -36,7 +36,7 @@ export * from './shared/types';
 export * from './shared/constants';
 export * from './shared/utils';
 export { getLogger } from './shared/logger';
-export { registerWorker, unregisterWorker, requestShutdown, isShuttingDown, resetShutdown } from './shared/shutdown';
+export { registerWorker, unregisterWorker, setWorkerActiveCount, getTotalActiveJobs, getWorkerCount, requestShutdown, isShuttingDown, resetShutdown } from './shared/shutdown';
 export { VERSION as version } from './shared/version';
 export { notifyJobAvailable, waitForJob } from './shared/job-events';
 export { getDaemonStatus } from './shared/daemon-status';

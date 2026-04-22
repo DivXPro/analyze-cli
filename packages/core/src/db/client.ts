@@ -21,6 +21,7 @@ function getDb(): duckdb.Database {
   if (!_db) {
     _db = new duckdb.Database(getDbPath());
     _db.run("PRAGMA journal_mode='wal';");
+    _db.run("PRAGMA wal_autocheckpoint=1000;");
   }
   return _db;
 }
@@ -100,7 +101,10 @@ export async function checkpoint(): Promise<void> {
   return exec('CHECKPOINT;');
 }
 
-export function close(): void {
+export async function close(): Promise<void> {
+  if (_db) {
+    try { await checkpoint(); } catch {}
+  }
   if (_conn) {
     _conn.close();
     _conn = null;
