@@ -40,6 +40,8 @@ export { registerWorker, unregisterWorker, requestShutdown, isShuttingDown, rese
 export { VERSION as version } from './shared/version';
 export { notifyJobAvailable, waitForJob } from './shared/job-events';
 export { getDaemonPid, getDaemonVersion, isDaemonRunning, cleanupStaleDaemonFiles } from './shared/daemon-status';
+export { readLockFile, writeLockFile, removeLockFile, isApiAlive } from './shared/lock-file';
+export type { LockFileData } from './shared/lock-file';
 
 // === Data Fetcher ===
 export { fetchViaOpencli } from './data-fetcher/opencli';
