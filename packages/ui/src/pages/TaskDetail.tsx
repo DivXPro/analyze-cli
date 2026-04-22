@@ -74,7 +74,7 @@ function StepRow({ step, taskId }: { step: TaskStep; taskId: string }) {
     setLoadingResults(true);
     try {
       const data = await apiGet<{ results: AnalysisResult[]; stats: ResultStats }>(
-        `/api/tasks/${step.id}/results?strategy_id=${step.strategy_id}`
+        `/api/tasks/${taskId}/results?strategy_id=${step.strategy_id}`
       );
       setResults(data.results);
       setResultStats(data.stats);
@@ -256,7 +256,7 @@ export default function TaskDetail() {
         {task.steps.length === 0 ? (
           <p className="text-sm text-muted-foreground">暂无分析步骤</p>
         ) : (
-          task.steps.map((step) => <StepRow key={step.id} step={step} />)
+          task.steps.map((step) => <StepRow key={step.id} step={step} taskId={task.id} />)
         )}
       </div>
 
