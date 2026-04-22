@@ -1,5 +1,6 @@
 import * as child_process from 'child_process';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,7 +14,16 @@ export interface TestContext {
   cleanup: () => Promise<void>;
 }
 
-const API_PORT = 3000;
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address()!;
+      server.close(() => resolve((addr as net.AddressInfo).port));
+    });
+    server.on('error', reject);
+  });
+}
 
 export async function startServer(): Promise<TestContext> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyze-cli-e2e-'));
@@ -24,23 +34,12 @@ export async function startServer(): Promise<TestContext> {
     throw new Error('API dist not found. Run `pnpm --filter @analyze-cli/api build` first.');
   }
 
-  // Wait for port to be available (previous test server may still be shutting down)
-  for (let i = 0; i < 20; i++) {
-    try {
-      const s = await import('node:net').then(m => m.createServer());
-      await new Promise<void>((resolve, reject) => {
-        s.listen(API_PORT, '127.0.0.1', () => { s.close(); resolve(); });
-        s.on('error', reject);
-      });
-      break;
-    } catch {
-      await new Promise(r => setTimeout(r, 500));
-    }
-  }
+  const port = await getFreePort();
 
   const proc = child_process.spawn('node', [distPath], {
     env: {
       ...process.env,
+      PORT: String(port),
       ANALYZE_CLI_DB_PATH: dbPath,
       ANALYZE_CLI_LOG_LEVEL: 'error',
     },
@@ -51,7 +50,7 @@ export async function startServer(): Promise<TestContext> {
   let ready = false;
   for (let i = 0; i < 40; i++) {
     try {
-      const res = await fetch(`http://127.0.0.1:${API_PORT}/health`);
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
       if (res.ok) {
         ready = true;
         break;
@@ -64,12 +63,13 @@ export async function startServer(): Promise<TestContext> {
 
   if (!ready) {
     proc.kill('SIGKILL');
-    throw new Error(`Server failed to start within 10s`);
+    const stderr = proc.stderr.read()?.toString() ?? '';
+    throw new Error(`Server failed to start within 10s on port ${port}\n${stderr}`);
   }
 
   return {
-    port: API_PORT,
-    baseUrl: `http://127.0.0.1:${API_PORT}`,
+    port,
+    baseUrl: `http://127.0.0.1:${port}`,
     cleanup: async () => {
       proc.kill('SIGTERM');
       await new Promise<void>((resolve) => {
