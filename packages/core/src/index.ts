@@ -39,7 +39,8 @@ export { getLogger } from './shared/logger';
 export { registerWorker, unregisterWorker, requestShutdown, isShuttingDown, resetShutdown } from './shared/shutdown';
 export { VERSION as version } from './shared/version';
 export { notifyJobAvailable, waitForJob } from './shared/job-events';
-export { getDaemonPid, getDaemonVersion, isDaemonRunning, cleanupStaleDaemonFiles } from './shared/daemon-status';
+export { getDaemonStatus } from './shared/daemon-status';
+export type { DaemonStatus } from './shared/daemon-status';
 export { readLockFile, writeLockFile, removeLockFile, isApiAlive } from './shared/lock-file';
 export type { LockFileData } from './shared/lock-file';
 
