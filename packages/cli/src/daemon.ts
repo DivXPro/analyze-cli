@@ -1,12 +1,9 @@
 import { Command } from 'commander';
 import * as pc from 'picocolors';
+import { spawn } from 'child_process';
 import * as path from 'path';
-import { fork, spawn } from 'child_process';
-import { IPC_SOCKET_PATH } from '@analyze-cli/core';
-import { sendIpcRequest } from '../../../src/daemon/ipc-server';
-import { isDaemonRunning, getDaemonPid, getDaemonVersion, cleanupStaleDaemonFiles } from '@analyze-cli/core';
+import { readLockFile, isApiAlive, removeLockFile } from '@analyze-cli/core';
 import { VERSION } from '@analyze-cli/core';
-import { getLogFilePath } from '@analyze-cli/core';
 
 export function daemonCommands(program: Command): void {
   const daemon = program.command('daemon').description('Manage the analysis daemon');
@@ -17,17 +14,30 @@ export function daemonCommands(program: Command): void {
     .option('--fg', 'Run in foreground (debug mode)')
     .option('--verbose', 'Enable debug-level logging')
     .action(async (opts: { fg?: boolean; verbose?: boolean }) => {
-      const logFile = getLogFilePath();
-      if (opts.fg) {
-        console.log(pc.yellow('Starting daemon in foreground (debug mode)...'));
-        const daemonPath = path.join(__dirname, '../daemon/index.js');
-        const env: NodeJS.ProcessEnv = { ...process.env, WORKER_ID: '0' };
-        if (opts.verbose) {
-          env.ANALYZE_CLI_LOG_LEVEL = 'debug';
+      // Check if already running
+      const lock = readLockFile();
+      if (lock) {
+        const alive = await isApiAlive(lock.port);
+        if (alive) {
+          console.log(pc.yellow(`Daemon already running on port ${lock.port} (PID ${lock.pid})`));
+          return;
         }
-        const child = fork(daemonPath, [], {
+        removeLockFile();
+      }
+
+      // Resolve API package path from monorepo root
+      const monorepoRoot = path.dirname(path.dirname(require.resolve('@analyze-cli/core/package.json')));
+      const apiDir = path.join(monorepoRoot, 'packages', 'api');
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      if (opts.verbose) {
+        env.ANALYZE_CLI_LOG_LEVEL = 'debug';
+      }
+
+      if (opts.fg) {
+        console.log(pc.yellow('Starting daemon in foreground...'));
+        const child = spawn('node', ['dist/index.js'], {
+          cwd: apiDir,
           env,
-          detached: false,
           stdio: 'inherit',
         });
         child.on('exit', (code) => {
@@ -35,33 +45,31 @@ export function daemonCommands(program: Command): void {
           process.exit(code ?? 1);
         });
       } else {
-        if (isDaemonRunning()) {
-          const pid = getDaemonPid();
-          console.log(pc.yellow('Daemon is already running (PID: ' + pid + ')'));
-          console.log(pc.dim(`Log file: ${logFile}`));
-          return;
-        }
-        cleanupStaleDaemonFiles();
         console.log(pc.yellow('Starting daemon in background...'));
-        const daemonPath = path.join(__dirname, '../daemon/index.js');
-        const env: NodeJS.ProcessEnv = { ...process.env, WORKER_ID: '0' };
-        if (opts.verbose) {
-          env.ANALYZE_CLI_LOG_LEVEL = 'debug';
-        }
-        const child = spawn('node', [daemonPath], {
+        const child = spawn('node', ['dist/index.js'], {
+          cwd: apiDir,
           env,
           detached: true,
           stdio: 'ignore',
         });
         child.unref();
-        // Wait a moment for the daemon to start
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (isDaemonRunning()) {
-          console.log(pc.green(`Daemon started (PID: ${getDaemonPid()})`));
-          console.log(pc.dim(`Log file: ${logFile}`));
-        } else {
-          console.log(pc.red('Failed to start daemon'));
+
+        // Wait for API to be ready (poll lock file + health)
+        const start = Date.now();
+        const timeout = 15_000;
+        while (Date.now() - start < timeout) {
+          await new Promise((r) => setTimeout(r, 500));
+          const newLock = readLockFile();
+          if (newLock) {
+            const alive = await isApiAlive(newLock.port);
+            if (alive) {
+              console.log(pc.green(`Daemon started on port ${newLock.port} (PID ${newLock.pid})`));
+              return;
+            }
+          }
         }
+        console.log(pc.red('Daemon failed to start within timeout'));
+        process.exit(1);
       }
     });
 
@@ -69,58 +77,71 @@ export function daemonCommands(program: Command): void {
     .command('stop')
     .description('Stop the daemon')
     .action(async () => {
-      const pid = getDaemonPid();
-      if (!pid) {
+      const lock = readLockFile();
+      if (!lock) {
         console.log(pc.yellow('Daemon is not running'));
         return;
       }
-      try {
-        process.kill(pid, 'SIGTERM');
-        // Wait for process to exit
-        let attempts = 0;
-        while (attempts < 30) {
-          try {
-            process.kill(pid, 0);
-            // Still running, wait
-            await new Promise(resolve => setTimeout(resolve, 200));
-            attempts++;
-          } catch {
-            break;
-          }
-        }
-        cleanupStaleDaemonFiles();
-        console.log(pc.green('Daemon stopped'));
-      } catch {
-        // Process already dead
-        cleanupStaleDaemonFiles();
-        console.log(pc.green('Daemon stopped (was already dead)'));
+      const alive = await isApiAlive(lock.port);
+      if (!alive) {
+        removeLockFile();
+        console.log(pc.green('Daemon was not running (cleaned stale lock)'));
+        return;
       }
+      try {
+        process.kill(lock.pid, 'SIGTERM');
+      } catch {
+        removeLockFile();
+        console.log(pc.green('Daemon stopped (was already dead)'));
+        return;
+      }
+      console.log(pc.yellow('Daemon stopping...'));
+
+      // Wait for lock file to be removed
+      const start = Date.now();
+      while (Date.now() - start < 10_000) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (!readLockFile()) {
+          console.log(pc.green('Daemon stopped'));
+          return;
+        }
+      }
+      console.log(pc.red('Daemon did not stop within timeout'));
+      process.exit(1);
     });
 
   daemon
     .command('status')
     .description('Check daemon status')
     .action(async () => {
-      const pid = getDaemonPid();
-      if (!pid || !isDaemonRunning()) {
+      const lock = readLockFile();
+      if (!lock) {
         console.log(pc.red('Daemon is not running'));
         return;
       }
-      const daemonVersion = getDaemonVersion();
-      const versionMatch = daemonVersion === VERSION;
-      console.log(pc.green(`Daemon is running (PID: ${pid})`));
-      console.log(`Version:  ${daemonVersion ?? 'unknown'} ${versionMatch ? pc.green('(matches CLI)') : pc.yellow(`(CLI: ${VERSION})`)}`);
-      console.log(`Socket:   ${IPC_SOCKET_PATH}`);
-      console.log(pc.dim(`Log file: ${getLogFilePath()}`));
+      const alive = await isApiAlive(lock.port);
+      if (!alive) {
+        removeLockFile();
+        console.log(pc.red('Daemon is not running (cleaned stale lock)'));
+        return;
+      }
+
+      console.log(pc.green(`Daemon running on port ${lock.port} (PID ${lock.pid})`));
+      console.log(`Started:  ${lock.startedAt}`);
+
       try {
-        const status = await sendIpcRequest('daemon.status', {}) as Record<string, unknown>;
-        console.log('\nQueue stats:');
-        const queueStats = status.queue_stats as Record<string, unknown>;
-        for (const [key, value] of Object.entries(queueStats || {})) {
-          console.log(`  ${key}: ${value}`);
+        const res = await fetch(`http://localhost:${lock.port}/api/status`);
+        const status = await res.json() as Record<string, unknown>;
+        console.log(`Uptime:   ${Math.round((status.uptime as number ?? 0))}s`);
+        const queueStats = status.queue_stats as Record<string, unknown> | undefined;
+        if (queueStats) {
+          console.log('\nQueue stats:');
+          for (const [key, value] of Object.entries(queueStats)) {
+            console.log(`  ${key}: ${value}`);
+          }
         }
       } catch {
-        console.log(pc.yellow('Could not connect to daemon via IPC'));
+        console.log(pc.yellow('Could not fetch daemon status'));
       }
     });
 
@@ -130,65 +151,27 @@ export function daemonCommands(program: Command): void {
     .option('--fg', 'Run in foreground (debug mode)')
     .option('--verbose', 'Enable debug-level logging')
     .action(async (opts: { fg?: boolean; verbose?: boolean }) => {
-      const pid = getDaemonPid();
-      if (pid) {
-        try {
-          process.kill(pid, 'SIGTERM');
-          let attempts = 0;
-          while (attempts < 30) {
-            try {
-              process.kill(pid, 0);
-              await new Promise(resolve => setTimeout(resolve, 200));
-              attempts++;
-            } catch {
-              break;
-            }
+      // Stop
+      const lock = readLockFile();
+      if (lock) {
+        const alive = await isApiAlive(lock.port);
+        if (alive) {
+          try { process.kill(lock.pid, 'SIGTERM'); } catch {}
+          const start = Date.now();
+          while (Date.now() - start < 10_000) {
+            await new Promise((r) => setTimeout(r, 500));
+            if (!readLockFile()) break;
           }
-          cleanupStaleDaemonFiles();
           console.log(pc.green('Daemon stopped'));
-        } catch {
-          cleanupStaleDaemonFiles();
+        } else {
+          removeLockFile();
         }
       }
 
-      const logFile = getLogFilePath();
-      if (opts.fg) {
-        console.log(pc.yellow('Starting daemon in foreground (debug mode)...'));
-        const daemonPath = path.join(__dirname, '../daemon/index.js');
-        const env: NodeJS.ProcessEnv = { ...process.env, WORKER_ID: '0' };
-        if (opts.verbose) {
-          env.ANALYZE_CLI_LOG_LEVEL = 'debug';
-        }
-        const child = fork(daemonPath, [], {
-          env,
-          detached: false,
-          stdio: 'inherit',
-        });
-        child.on('exit', (code) => {
-          console.log(`Daemon exited with code ${code}`);
-          process.exit(code ?? 1);
-        });
-      } else {
-        cleanupStaleDaemonFiles();
-        console.log(pc.yellow('Starting daemon in background...'));
-        const daemonPath = path.join(__dirname, '../daemon/index.js');
-        const env: NodeJS.ProcessEnv = { ...process.env, WORKER_ID: '0' };
-        if (opts.verbose) {
-          env.ANALYZE_CLI_LOG_LEVEL = 'debug';
-        }
-        const child = spawn('node', [daemonPath], {
-          env,
-          detached: true,
-          stdio: 'ignore',
-        });
-        child.unref();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (isDaemonRunning()) {
-          console.log(pc.green(`Daemon started (PID: ${getDaemonPid()})`));
-          console.log(pc.dim(`Log file: ${logFile}`));
-        } else {
-          console.log(pc.red('Failed to start daemon'));
-        }
+      // Start — invoke the start action
+      const startCmd = daemon.commands.find((c) => c.name() === 'start');
+      if (startCmd) {
+        await startCmd.parseAsync(['--fg', ...(opts.fg ? [] : []), ...(opts.verbose ? ['--verbose'] : [])], { from: 'user' });
       }
     });
 }
