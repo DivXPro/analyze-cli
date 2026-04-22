@@ -1,4 +1,8 @@
-const API_BASE = '';
+let API_BASE = '';
+
+export function setApiBase(base: string): void {
+  API_BASE = base;
+}
 
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const hasBody = options?.body !== undefined;
