@@ -1,33 +1,12 @@
 import { FastifyInstance } from 'fastify';
-import crypto from 'crypto';
-
-const AUTH_TOKEN = process.env.API_TOKEN ?? crypto.randomBytes(32).toString('hex');
-
-let printed = false;
-export function getAuthToken(): string {
-  if (!printed) {
-    console.log('\nAPI Auth Token:', AUTH_TOKEN);
-    console.log('   Store this in localStorage as "api_token" in the UI\n');
-    printed = true;
-  }
-  return AUTH_TOKEN;
-}
 
 export async function setupAuth(app: FastifyInstance) {
+  // Single-machine tool: reject non-localhost connections instead of token auth
   app.addHook('onRequest', async (request, reply) => {
-    // Only protect API routes
-    if (!request.url.startsWith('/api/')) return;
-
-    const auth = request.headers.authorization;
-    if (!auth || !auth.startsWith('Bearer ')) {
-      reply.code(401);
-      throw new Error('Missing Authorization header');
-    }
-
-    const token = auth.slice(7);
-    if (token !== AUTH_TOKEN) {
+    const remote = request.ip;
+    if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') {
       reply.code(403);
-      throw new Error('Invalid token');
+      throw new Error('Access denied: only localhost connections allowed');
     }
   });
 }
